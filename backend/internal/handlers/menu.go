@@ -12,7 +12,7 @@ import (
 
 func GetMenu(c *gin.Context) {
 	rows, err := database.DB.Query(
-		`SELECT id, name, description, price, category, COALESCE(image_url,''), available,
+		`SELECT id, name, description, price, COALESCE(cost_price,0), category, COALESCE(image_url,''), available,
 		        COALESCE(markup_percent,0), COALESCE(food_cost,0), created_at
 		 FROM menu_items ORDER BY category, name`,
 	)
@@ -25,7 +25,7 @@ func GetMenu(c *gin.Context) {
 	items := []models.MenuItem{}
 	for rows.Next() {
 		var m models.MenuItem
-		rows.Scan(&m.ID, &m.Name, &m.Description, &m.Price, &m.Category, &m.ImageURL, &m.Available,
+		rows.Scan(&m.ID, &m.Name, &m.Description, &m.Price, &m.CostPrice, &m.Category, &m.ImageURL, &m.Available,
 			&m.MarkupPercent, &m.FoodCost, &m.CreatedAt)
 		items = append(items, m)
 	}
@@ -39,9 +39,9 @@ func CreateMenuItem(c *gin.Context) {
 		return
 	}
 	err := database.DB.QueryRow(
-		`INSERT INTO menu_items (name, description, price, category, image_url, available)
-		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
-		m.Name, m.Description, m.Price, m.Category, m.ImageURL, true,
+		`INSERT INTO menu_items (name, description, price, cost_price, category, image_url, available)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`,
+		m.Name, m.Description, m.Price, m.CostPrice, m.Category, m.ImageURL, true,
 	).Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -60,8 +60,8 @@ func UpdateMenuItem(c *gin.Context) {
 		return
 	}
 	_, err := database.DB.Exec(
-		`UPDATE menu_items SET name=$1, description=$2, price=$3, category=$4, image_url=$5, available=$6 WHERE id=$7`,
-		m.Name, m.Description, m.Price, m.Category, m.ImageURL, m.Available, id,
+		`UPDATE menu_items SET name=$1, description=$2, price=$3, cost_price=$4, category=$5, image_url=$6, available=$7 WHERE id=$8`,
+		m.Name, m.Description, m.Price, m.CostPrice, m.Category, m.ImageURL, m.Available, id,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

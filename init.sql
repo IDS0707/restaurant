@@ -8,6 +8,7 @@ CREATE TABLE menu_items (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     price DECIMAL(10,2) NOT NULL,
+    cost_price DECIMAL(10,2) DEFAULT 0,
     category VARCHAR(100) DEFAULT 'Основные блюда',
     image_url TEXT,
     available BOOLEAN DEFAULT true,

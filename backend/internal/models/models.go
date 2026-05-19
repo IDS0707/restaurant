@@ -7,6 +7,7 @@ type MenuItem struct {
 	Name          string    `json:"name"`
 	Description   string    `json:"description"`
 	Price         float64   `json:"price"`
+	CostPrice     float64   `json:"cost_price"`
 	Category      string    `json:"category"`
 	ImageURL      string    `json:"image_url"`
 	Available     bool      `json:"available"`
