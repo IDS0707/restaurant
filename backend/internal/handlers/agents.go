@@ -221,6 +221,35 @@ func ScanCard(c *gin.Context) {
 	).Scan(&cardID, &agentID, &cardType, &useCount, &isActive)
 
 	if err != nil {
+		// Try as promo QR code
+		var promoDiscount float64
+		var promoActive bool
+		promoErr := database.DB.QueryRow(
+			`SELECT discount_amount, is_active FROM promo_discount WHERE code=$1`,
+			body.CardCode,
+		).Scan(&promoDiscount, &promoActive)
+		if promoErr == nil {
+			if !promoActive {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Promo deaktivlashtirilgan"})
+				return
+			}
+			discount := promoDiscount
+			if discount > body.OrderTotal && body.OrderTotal > 0 {
+				discount = body.OrderTotal
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"card_id":     0,
+				"agent_id":    0,
+				"agent_name":  "Promo chegirma",
+				"card_type":   "promo",
+				"use_count":   0,
+				"discount":    discount,
+				"bonus_ready": false,
+				"valid":       true,
+			})
+			return
+		}
+
 		// Try as 7-digit agent personal code — use the agent's gold card
 		var goldCardCode string
 		err2 := database.DB.QueryRow(

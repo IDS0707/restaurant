@@ -69,6 +69,11 @@ export const inventoryAPI = {
   getLogs: () => api.get('/admin/inventory/logs'),
 }
 
+export const promoAPI = {
+  getAll: () => api.get('/admin/promo'),
+  update: (id, data) => api.put(`/admin/promo/${id}`, data),
+}
+
 export const authAPI = {
   login: (username, password) => api.post('/auth/login', { username, password }),
 }

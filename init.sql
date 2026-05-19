@@ -138,3 +138,16 @@ INSERT INTO menu_items (name, description, price, category) VALUES
 ('Kompot', 'Quritilgan mevalardan tayyorlangan uy kompoti', 6000, 'Ichimliklar'),
 ('Mastava', 'Go''sht va sabzavotlar bilan guruch sho''rvasi', 26000, 'Sho''rvalar'),
 ('Beshbarmaq', 'Uy lapmasi va piyoz bilan go''sht', 38000, 'Asosiy taomlar');
+
+-- Promo QR discount
+CREATE TABLE IF NOT EXISTS promo_discount (
+    id              SERIAL PRIMARY KEY,
+    code            VARCHAR(40) UNIQUE NOT NULL,
+    discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    is_active       BOOLEAN DEFAULT true,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO promo_discount (code, discount_amount, is_active)
+VALUES ('PROMO-MAIN', 15000, true)
+ON CONFLICT (code) DO NOTHING;

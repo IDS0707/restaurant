@@ -12,6 +12,7 @@ import AdminMenu from './pages/Admin/AdminMenu'
 import AdminMenuDetail from './pages/Admin/AdminMenuDetail'
 import AdminInventory from './pages/Admin/AdminInventory'
 import AdminAgents from './pages/Admin/AdminAgents'
+import AdminPromo from './pages/Admin/AdminPromo'
 import AdminAnalytics from './pages/Admin/AdminAnalytics'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="menu/:id" element={<AdminMenuDetail />} />
           <Route path="inventory" element={<AdminInventory />} />
           <Route path="agents" element={<AdminAgents />} />
+          <Route path="promo" element={<AdminPromo />} />
           <Route path="analytics" element={<AdminAnalytics />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

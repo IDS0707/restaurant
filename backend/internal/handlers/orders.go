@@ -246,7 +246,22 @@ func applyCardDiscount(tx *sql.Tx, cardCode string, totalPrice float64) (float64
 		 FROM referral_cards rc WHERE rc.card_code=$1`, cardCode,
 	).Scan(&cardID, &agentID, &cardType, &useCount, &isActive)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("card not found")
+		// Try promo discount code (separate global QR managed in admin)
+		var promoDiscount float64
+		var promoActive bool
+		promoErr := tx.QueryRow(
+			`SELECT discount_amount, is_active FROM promo_discount WHERE code=$1`, cardCode,
+		).Scan(&promoDiscount, &promoActive)
+		if promoErr != nil {
+			return 0, 0, 0, fmt.Errorf("card not found")
+		}
+		if !promoActive {
+			return 0, 0, 0, fmt.Errorf("promo is inactive")
+		}
+		if promoDiscount > totalPrice {
+			promoDiscount = totalPrice
+		}
+		return promoDiscount, 0, 0, nil
 	}
 	if !isActive {
 		return 0, 0, 0, fmt.Errorf("card is inactive")

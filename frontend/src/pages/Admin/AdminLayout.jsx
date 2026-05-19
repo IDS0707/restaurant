@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom'
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, LogOut, Home, Package } from 'lucide-react'
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, LogOut, Home, Package, QrCode } from 'lucide-react'
 import './AdminLayout.css'
 
 const NAV = [
@@ -9,6 +9,7 @@ const NAV = [
   { to: '/admin/menu', icon: UtensilsCrossed, label: 'Меню' },
   { to: '/admin/inventory', icon: Package, label: 'Омбор' },
   { to: '/admin/agents', icon: Users, label: 'Агентлар' },
+  { to: '/admin/promo', icon: QrCode, label: 'Промо QR' },
   { to: '/admin/analytics', icon: BarChart3, label: 'Аналитика' },
 ]
 

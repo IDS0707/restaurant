@@ -84,6 +84,10 @@ func main() {
 		admin.PUT("/agents/:id", handlers.UpdateAgent)
 		admin.GET("/agents/:id/bonuses", handlers.GetAgentBonuses)
 		admin.DELETE("/agents/:id", handlers.DeleteAgent)
+
+		// Promo QR discount
+		admin.GET("/promo", handlers.GetPromoDiscount)
+		admin.PUT("/promo/:id", handlers.UpdatePromoDiscount)
 	}
 
 	port := os.Getenv("PORT")

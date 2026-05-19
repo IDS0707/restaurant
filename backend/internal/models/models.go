@@ -193,6 +193,14 @@ type RecipeItemDetail struct {
 	Cost           float64 `json:"cost"`
 }
 
+type PromoDiscount struct {
+	ID             int       `json:"id"`
+	Code           string    `json:"code"`
+	DiscountAmount float64   `json:"discount_amount"`
+	IsActive       bool      `json:"is_active"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
 type InventoryLog struct {
 	ID             int       `json:"id"`
 	IngredientID   int       `json:"ingredient_id"`
