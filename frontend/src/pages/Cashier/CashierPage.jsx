@@ -457,11 +457,43 @@ export default function CashierPage() {
                 ? '👇 QR kodni rom ichiga olib keling'
                 : 'Iltimos kuting yoki ruxsat bering'}
             </p>
-            {scannerStatus.startsWith('Xato') && (
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4, textAlign: 'center' }}>
-                Yoki kartadagi raqamni qo'lda terib, ✓ tugmasini bosing
-              </p>
-            )}
+
+            {/* File upload fallback — works even without live camera */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: 8 }}>
+                Yoki QR rasmni yuklang (telefonda surat oling)
+              </div>
+              <label style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '10px', borderRadius: 9, background: 'rgba(255,107,53,0.15)',
+                border: '1.5px dashed #FF6B35', color: '#FF6B35', cursor: 'pointer',
+                fontSize: 13, fontWeight: 600,
+              }}>
+                <Camera size={15} />
+                <span>Rasm tanlash / Surat olish</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    try {
+                      const tmp = new Html5Qrcode('qr-reader-file')
+                      const decoded = await tmp.scanFile(file, false)
+                      try { tmp.clear() } catch {}
+                      setScannerOpen(false)
+                      scanCardRef.current?.(decoded)
+                    } catch (err) {
+                      toast.error("Rasmda QR topilmadi — yaqinroq surat oling")
+                    }
+                  }}
+                />
+            <div id="qr-reader-file" style={{ display: 'none' }} />
+              </label>
+            </div>
           </div>
         </div>
       )}
