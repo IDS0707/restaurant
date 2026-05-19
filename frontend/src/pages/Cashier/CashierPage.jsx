@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { menuAPI, ordersAPI, agentsAPI } from '../../api'
 import toast from 'react-hot-toast'
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, CheckCircle, Search, QrCode, ChefHat, Home, Camera } from 'lucide-react'
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, CheckCircle, Search, QrCode, ChefHat, Home, Camera, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5Qrcode } from 'html5-qrcode'
 import './CashierPage.css'
 
 const statusLabels = { pending: "Kutilmoqda", cooking: "Tayyorlanmoqda", ready: "Tayyor", served: "Berildi" }
@@ -23,6 +23,8 @@ export default function CashierPage() {
   const [orders, setOrders] = useState([])
   const [activeTab, setActiveTab] = useState('menu')
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [facingMode, setFacingMode] = useState('environment') // 'environment' = orqa, 'user' = old
+  const [scannerError, setScannerError] = useState('')
   const wsRef = useRef(null)
   const scanCardRef = useRef(null)
 
@@ -108,46 +110,55 @@ export default function CashierPage() {
 
   useEffect(() => {
     if (!scannerOpen) return
-    let scanner
+    let qr
     let handled = false
+    let cancelled = false
 
-    // Small delay so the target div is in the DOM
-    const timer = setTimeout(() => {
+    setScannerError('')
+
+    const timer = setTimeout(async () => {
       try {
-        scanner = new Html5QrcodeScanner(
-          'qr-scanner-target',
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            rememberLastUsedCamera: true,
-            showTorchButtonIfSupported: true,
-            aspectRatio: 1.0,
-          },
-          /* verbose */ false,
-        )
-        scanner.render(
+        qr = new Html5Qrcode('qr-scanner-target', /* verbose */ false)
+
+        await qr.start(
+          { facingMode },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
           (decoded) => {
-            if (handled) return
+            if (handled || cancelled) return
             handled = true
-            try { scanner.clear() } catch {}
-            setScannerOpen(false)
-            scanCardRef.current?.(decoded)
+            qr.stop().catch(() => {}).then(() => {
+              if (cancelled) return
+              setScannerOpen(false)
+              scanCardRef.current?.(decoded)
+            })
           },
-          () => {} // ignore per-frame errors
+          () => {} // ignore per-frame failures
         )
       } catch (e) {
-        toast.error("Skanerni ochib bo'lmadi")
-        setScannerOpen(false)
+        if (cancelled) return
+        const msg = (e && (e.message || e.name)) || String(e)
+        let userMsg = msg
+        if (/Permission|NotAllowed/i.test(msg)) userMsg = "Kameraga ruxsat berilmadi"
+        else if (/NotFound|Requested device not found/i.test(msg)) userMsg = "Bu turdagi kamera topilmadi"
+        else if (/NotReadable|TrackStart/i.test(msg)) userMsg = "Kamerani boshqa dastur ishlatayapti"
+        setScannerError(userMsg)
       }
     }, 60)
 
     return () => {
+      cancelled = true
       clearTimeout(timer)
-      if (scanner) {
-        try { scanner.clear() } catch {}
+      if (qr) {
+        qr.stop().catch(() => {}).then(() => {
+          try { qr.clear() } catch {}
+        })
       }
     }
-  }, [scannerOpen])
+  }, [scannerOpen, facingMode])
+
+  const flipCamera = () => {
+    setFacingMode(prev => prev === 'environment' ? 'user' : 'environment')
+  }
 
   const submitOrder = async () => {
     if (cart.length === 0) { toast.error("Savat bo'sh"); return }
@@ -406,16 +417,48 @@ export default function CashierPage() {
                 <Camera size={22} />
                 <h2 style={{ margin: 0, fontSize: 17 }}>QR kodni skanerlash</h2>
               </div>
-              <button
-                onClick={() => setScannerOpen(false)}
-                style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: 6 }}
-              >
-                <X size={22} />
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={flipCamera}
+                  title={facingMode === 'environment' ? 'Old kameraga o\'tish' : 'Orqa kameraga o\'tish'}
+                  style={{
+                    background: 'rgba(255,107,53,0.2)', border: '1px solid #FF6B35',
+                    color: '#FF6B35', cursor: 'pointer', padding: '6px 10px', borderRadius: 8,
+                    display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+                  }}
+                >
+                  <RefreshCw size={14} />
+                  <span>{facingMode === 'environment' ? 'Old' : 'Orqa'}</span>
+                </button>
+                <button
+                  onClick={() => setScannerOpen(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: 6 }}
+                >
+                  <X size={22} />
+                </button>
+              </div>
             </div>
 
-            {/* html5-qrcode renders its own UI here (Start button → camera) */}
-            <div id="qr-scanner-target" style={{ width: '100%' }} />
+            {/* Camera viewport */}
+            <div style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', minHeight: 320, border: '2px solid #FF6B35' }}>
+              <div id="qr-scanner-target" style={{ width: '100%' }} />
+              {scannerError && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 20,
+                  background: 'rgba(0,0,0,0.85)', color: 'white', zIndex: 5,
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>⚠️</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{scannerError}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+                    Pastdagi «Rasm yuklab skanerlash» tugmasidan foydalaning
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginTop: 6 }}>
+              {facingMode === 'environment' ? '📷 Orqa kamera (default)' : '🤳 Old kamera'}
+            </div>
 
             {/* File upload — guaranteed to work even if camera doesn't */}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
