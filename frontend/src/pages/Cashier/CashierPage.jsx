@@ -23,6 +23,7 @@ export default function CashierPage() {
   const [orders, setOrders] = useState([])
   const [activeTab, setActiveTab] = useState('menu')
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerStatus, setScannerStatus] = useState('') // 'loading' | 'running' | 'error: ...'
   const wsRef = useRef(null)
   const scanCardRef = useRef(null)
 
@@ -110,31 +111,67 @@ export default function CashierPage() {
     let handled = false
     let cancelled = false
 
+    setScannerStatus('loading')
+
     ;(async () => {
+      // Wait one frame so #qr-reader is in the DOM and laid out
+      await new Promise(r => setTimeout(r, 50))
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setScannerStatus("Brauzer kamerani qo'llab-quvvatlamaydi")
+        return
+      }
+      if (!window.isSecureContext) {
+        setScannerStatus("HTTPS kerak (manzilga 's' qo'shing: https://...)")
+        return
+      }
+
       try {
-        qr = new Html5Qrcode('qr-reader')
-        await qr.start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 240, height: 240 } },
-          (decoded) => {
-            if (handled) return
-            handled = true
-            qr.stop().catch(() => {}).then(() => {
-              if (cancelled) return
-              setScannerOpen(false)
-              scanCardRef.current?.(decoded)
-            })
-          },
-          () => {}
-        )
+        qr = new Html5Qrcode('qr-reader', /* verbose */ false)
+
+        const tryStart = async (cameraConfig) => {
+          return qr.start(
+            cameraConfig,
+            { fps: 10, qrbox: { width: 240, height: 240 } },
+            (decoded) => {
+              if (handled) return
+              handled = true
+              qr.stop().catch(() => {}).then(() => {
+                if (cancelled) return
+                setScannerOpen(false)
+                scanCardRef.current?.(decoded)
+              })
+            },
+            () => {}
+          )
+        }
+
+        // First try environment-facing (back camera on phones)
+        try {
+          await tryStart({ facingMode: { exact: 'environment' } })
+        } catch (firstErr) {
+          // Fallback: pick first available camera (laptops, devices without back cam)
+          const cams = await Html5Qrcode.getCameras()
+          if (!cams || cams.length === 0) {
+            throw new Error('Kamera topilmadi')
+          }
+          await tryStart(cams[0].id)
+        }
+
+        setScannerStatus('running')
       } catch (e) {
-        toast.error("Kamerani ochib bo'lmadi")
-        setScannerOpen(false)
+        const msg = (e && (e.message || e.name)) || String(e)
+        let userMsg = msg
+        if (/Permission|NotAllowed/i.test(msg)) userMsg = "Brauzer kameraga ruxsat bermadi"
+        else if (/NotFound/i.test(msg)) userMsg = "Qurilmada kamera topilmadi"
+        else if (/NotReadable|TrackStart/i.test(msg)) userMsg = "Kamerani boshqa dastur ishlatayapti"
+        setScannerStatus("Xato: " + userMsg)
       }
     })()
 
     return () => {
       cancelled = true
+      setScannerStatus('')
       if (qr) {
         qr.stop().catch(() => {}).then(() => {
           try { qr.clear() } catch {}
@@ -388,10 +425,29 @@ export default function CashierPage() {
               <Camera size={22} color="#FF6B35" />
               <h2 style={{ margin: 0, fontSize: 18 }}>QR kodni skanerlash</h2>
             </div>
-            <div id="qr-reader" style={{ width: '100%', borderRadius: 10, overflow: 'hidden' }} />
+            <div className="qr-reader-wrap" style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', minHeight: 320 }}>
+              <div id="qr-reader" style={{ width: '100%' }} />
+              {scannerStatus !== 'running' && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontSize: 14, textAlign: 'center', padding: 16,
+                  background: 'rgba(0,0,0,0.5)',
+                }}>
+                  {scannerStatus === 'loading'
+                    ? 'Kamera yuklanmoqda...'
+                    : (scannerStatus || 'Kamera tayyorlanmoqda...')}
+                </div>
+              )}
+            </div>
             <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12, textAlign: 'center' }}>
               Karta QR kodini kameraga ko'rsating
             </p>
+            {scannerStatus.startsWith('Xato') && (
+              <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4, textAlign: 'center' }}>
+                Yoki kartadagi raqamni qo'lda terib, ✓ tugmasini bosing
+              </p>
+            )}
           </div>
         </div>
       )}
