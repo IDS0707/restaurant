@@ -1,0 +1,57 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: youit_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: youit_cafe
+      POSTGRES_USER: youit_user
+      POSTGRES_PASSWORD: youit_pass_2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U youit_user -d youit_cafe"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: youit_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: youit_cafe
+      DB_USER: youit_user
+      DB_PASSWORD: youit_pass_2024
+      JWT_SECRET: youit_jwt_secret_key_2024
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: youit_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3003:80"
+    environment:
+      VITE_API_URL: http://localhost:8080
+
+volumes:
+  postgres_data:

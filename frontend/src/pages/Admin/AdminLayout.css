@@ -1,0 +1,328 @@
+.al-root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+.al-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #FF6B35 0%, #E85A24 55%, #C94010 100%);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 24px rgba(201,64,16,0.3);
+}
+
+.al-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+}
+
+.al-logo-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.al-logo-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: white;
+  line-height: 1.2;
+}
+
+.al-logo-sub {
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+  font-weight: 500;
+}
+
+.al-nav {
+  flex: 1;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.al-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: rgba(255,255,255,0.82);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
+.al-nav-item:hover {
+  background: rgba(255,255,255,0.18);
+  color: white;
+}
+
+.al-nav-item.active {
+  background: rgba(255,255,255,0.25);
+  color: white;
+  font-weight: 700;
+}
+
+.al-bottom {
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.al-logout {
+  color: rgba(255,255,255,0.75);
+}
+
+.al-main {
+  flex: 1;
+  overflow-y: auto;
+  background: #F5F5F5;
+  padding: 28px;
+}
+
+/* Shared card style used by child pages */
+.adm-card {
+  background: white;
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid #EFEFEF;
+}
+
+.adm-page-header {
+  margin-bottom: 24px;
+}
+
+.adm-page-header h1 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.adm-page-header p {
+  font-size: 13px;
+  color: #6B7280;
+  margin: 0;
+}
+
+.adm-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 160px;
+  color: #6B7280;
+  font-size: 15px;
+}
+
+.adm-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #F3F4F6;
+  border-top-color: #FF6B35;
+  border-radius: 50%;
+  animation: adm-spin 0.7s linear infinite;
+}
+
+@keyframes adm-spin { to { transform: rotate(360deg); } }
+
+.adm-empty {
+  text-align: center;
+  color: #9CA3AF;
+  padding: 40px;
+  font-size: 14px;
+}
+
+/* Modal */
+.adm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 20px;
+}
+
+.adm-modal {
+  background: white;
+  border-radius: 18px;
+  padding: 28px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+
+.adm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.adm-modal-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.adm-modal-header button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9CA3AF;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.adm-modal-header button:hover { color: #374151; background: #F3F4F6; }
+
+.adm-modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+/* Buttons */
+.adm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+}
+
+.adm-btn-primary {
+  background: linear-gradient(135deg, #FF6B35, #E85A24);
+  color: white;
+  box-shadow: 0 3px 10px rgba(255,107,53,0.35);
+}
+
+.adm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(255,107,53,0.4); }
+.adm-btn-primary:disabled { opacity: 0.55; transform: none; cursor: not-allowed; }
+
+.adm-btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1.5px solid #E5E7EB;
+}
+
+.adm-btn-secondary:hover { background: #F9FAFB; }
+
+.adm-btn-danger {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.adm-btn-danger:hover { background: #FECACA; }
+
+.adm-btn-sm { padding: 7px 13px; font-size: 13px; }
+
+/* Form */
+.adm-field { margin-bottom: 16px; }
+.adm-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4B5563;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.adm-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 9px;
+  font-size: 14px;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  background: white;
+}
+
+.adm-input:focus { border-color: #FF6B35; }
+
+.adm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* Badge */
+.adm-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.adm-badge-orange { background: #FFF4EF; color: #E85A24; }
+.adm-badge-green  { background: #D1FAE5; color: #065F46; }
+.adm-badge-red    { background: #FEE2E2; color: #991B1B; }
+.adm-badge-yellow { background: #FEF3C7; color: #92400E; }
+.adm-badge-gray   { background: #F3F4F6; color: #4B5563; }
+.adm-badge-blue   { background: #DBEAFE; color: #1D4ED8; }
+
+/* Table */
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.adm-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: #9CA3AF;
+  padding: 10px 14px;
+  border-bottom: 2px solid #F3F4F6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.adm-table td {
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #374151;
+  border-bottom: 1px solid #F9FAFB;
+}
+
+.adm-table tr:last-child td { border-bottom: none; }
+.adm-table tr:hover td { background: #FAFAFA; }
