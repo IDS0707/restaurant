@@ -3,7 +3,7 @@ import { menuAPI, ordersAPI, agentsAPI } from '../../api'
 import toast from 'react-hot-toast'
 import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, CheckCircle, Search, QrCode, ChefHat, Home, Camera } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode'
 import './CashierPage.css'
 
 const statusLabels = { pending: "Kutilmoqda", cooking: "Tayyorlanmoqda", ready: "Tayyor", served: "Berildi" }
@@ -23,7 +23,6 @@ export default function CashierPage() {
   const [orders, setOrders] = useState([])
   const [activeTab, setActiveTab] = useState('menu')
   const [scannerOpen, setScannerOpen] = useState(false)
-  const [scannerStatus, setScannerStatus] = useState('') // 'loading' | 'running' | 'error: ...'
   const wsRef = useRef(null)
   const scanCardRef = useRef(null)
 
@@ -65,20 +64,13 @@ export default function CashierPage() {
 
   const categories = ['all', ...new Set(menu.map(m => m.category))]
 
-  const filtered = menu.filter(m => {
-    const matchCat = category === 'all' || m.category === category
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchSearch && m.available
-  })
-
-  // Most expensive available item — always pinned at top
-  const mostExpensive = menu
-    .filter(m => m.available)
-    .reduce((max, m) => (!max || m.price > max.price) ? m : max, null)
-
-  const displayMenu = mostExpensive
-    ? [mostExpensive, ...filtered.filter(m => m.id !== mostExpensive.id)]
-    : filtered
+  const filtered = menu
+    .filter(m => {
+      const matchCat = category === 'all' || m.category === category
+      const matchSearch = m.name.toLowerCase().includes(search.toLowerCase())
+      return matchCat && matchSearch && m.available
+    })
+    .sort((a, b) => b.price - a.price) // qimmatlar tepada, arzonlar pastda
 
   const addToCart = (item) => {
     setCart(prev => {
@@ -116,75 +108,43 @@ export default function CashierPage() {
 
   useEffect(() => {
     if (!scannerOpen) return
-    let qr
+    let scanner
     let handled = false
-    let cancelled = false
 
-    setScannerStatus('loading')
-
-    ;(async () => {
-      // Wait one frame so #qr-reader is in the DOM and laid out
-      await new Promise(r => setTimeout(r, 50))
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setScannerStatus("Brauzer kamerani qo'llab-quvvatlamaydi")
-        return
-      }
-      if (!window.isSecureContext) {
-        setScannerStatus("HTTPS kerak (manzilga 's' qo'shing: https://...)")
-        return
-      }
-
+    // Small delay so the target div is in the DOM
+    const timer = setTimeout(() => {
       try {
-        qr = new Html5Qrcode('qr-reader', /* verbose */ false)
-
-        const tryStart = async (cameraConfig) => {
-          return qr.start(
-            cameraConfig,
-            { fps: 10, qrbox: { width: 240, height: 240 } },
-            (decoded) => {
-              if (handled) return
-              handled = true
-              qr.stop().catch(() => {}).then(() => {
-                if (cancelled) return
-                setScannerOpen(false)
-                scanCardRef.current?.(decoded)
-              })
-            },
-            () => {}
-          )
-        }
-
-        // First try environment-facing (back camera on phones)
-        try {
-          await tryStart({ facingMode: { exact: 'environment' } })
-        } catch (firstErr) {
-          // Fallback: pick first available camera (laptops, devices without back cam)
-          const cams = await Html5Qrcode.getCameras()
-          if (!cams || cams.length === 0) {
-            throw new Error('Kamera topilmadi')
-          }
-          await tryStart(cams[0].id)
-        }
-
-        setScannerStatus('running')
+        scanner = new Html5QrcodeScanner(
+          'qr-scanner-target',
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: true,
+            aspectRatio: 1.0,
+          },
+          /* verbose */ false,
+        )
+        scanner.render(
+          (decoded) => {
+            if (handled) return
+            handled = true
+            try { scanner.clear() } catch {}
+            setScannerOpen(false)
+            scanCardRef.current?.(decoded)
+          },
+          () => {} // ignore per-frame errors
+        )
       } catch (e) {
-        const msg = (e && (e.message || e.name)) || String(e)
-        let userMsg = msg
-        if (/Permission|NotAllowed/i.test(msg)) userMsg = "Brauzer kameraga ruxsat bermadi"
-        else if (/NotFound/i.test(msg)) userMsg = "Qurilmada kamera topilmadi"
-        else if (/NotReadable|TrackStart/i.test(msg)) userMsg = "Kamerani boshqa dastur ishlatayapti"
-        setScannerStatus("Xato: " + userMsg)
+        toast.error("Skanerni ochib bo'lmadi")
+        setScannerOpen(false)
       }
-    })()
+    }, 60)
 
     return () => {
-      cancelled = true
-      setScannerStatus('')
-      if (qr) {
-        qr.stop().catch(() => {}).then(() => {
-          try { qr.clear() } catch {}
-        })
+      clearTimeout(timer)
+      if (scanner) {
+        try { scanner.clear() } catch {}
       }
     }
   }, [scannerOpen])
@@ -271,18 +231,14 @@ export default function CashierPage() {
             </div>
 
             <div className="menu-grid">
-              {displayMenu.map(item => {
+              {filtered.map(item => {
                 const inCart = cart.find(c => c.id === item.id)
-                const isTop = mostExpensive && item.id === mostExpensive.id
                 return (
                   <div
                     key={item.id}
-                    className={`menu-card glass-card ${inCart ? 'in-cart' : ''} ${isTop ? 'menu-card-top' : ''}`}
+                    className={`menu-card glass-card ${inCart ? 'in-cart' : ''}`}
                     onClick={() => addToCart(item)}
                   >
-                    {isTop && (
-                      <div className="menu-card-top-badge">⭐ Eng qimmat</div>
-                    )}
                     <div className="menu-card-body">
                       <h3>{item.name}</h3>
                       <p>{item.description}</p>
@@ -433,61 +389,47 @@ export default function CashierPage() {
 
       {scannerOpen && (
         <div
-          className="order-success-modal"
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)',
+            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16,
+          }}
           onClick={e => e.target === e.currentTarget && setScannerOpen(false)}
         >
-          <div className="order-success-card slide-in" style={{ maxWidth: 460, padding: 16, background: '#0f0a08', color: 'white', border: '1px solid rgba(255,107,53,0.3)' }}>
-            <button className="modal-close" onClick={() => setScannerOpen(false)} style={{ color: 'white' }}><X size={20} /></button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, justifyContent: 'center', color: '#FF6B35' }}>
-              <Camera size={22} />
-              <h2 style={{ margin: 0, fontSize: 18, color: '#FF6B35' }}>QR kodni skanerlash</h2>
+          <div style={{
+            background: '#1a1a1a', borderRadius: 14, padding: 18, maxWidth: 480, width: '100%',
+            color: 'white', maxHeight: '95vh', overflowY: 'auto',
+            border: '1px solid rgba(255,107,53,0.4)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FF6B35' }}>
+                <Camera size={22} />
+                <h2 style={{ margin: 0, fontSize: 17 }}>QR kodni skanerlash</h2>
+              </div>
+              <button
+                onClick={() => setScannerOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: 6 }}
+              >
+                <X size={22} />
+              </button>
             </div>
-            <div style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', minHeight: 320, border: '2px solid #FF6B35' }}>
-              <div id="qr-reader" />
-              {scannerStatus !== 'running' && (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontSize: 15, textAlign: 'center', padding: 24,
-                  background: 'rgba(0,0,0,0.85)',
-                  zIndex: 10,
-                }}>
-                  <div style={{ fontSize: 40, marginBottom: 10 }}>
-                    {scannerStatus.startsWith('Xato') ? '⚠️' : '📷'}
-                  </div>
-                  <div style={{ fontWeight: 600 }}>
-                    {scannerStatus === 'loading'
-                      ? 'Kamera yuklanmoqda...'
-                      : (scannerStatus || 'Kamera tayyorlanmoqda...')}
-                  </div>
-                  {scannerStatus === 'loading' && (
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 8 }}>
-                      Brauzer kameraga ruxsat so'raydi — «Allow» bosing
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 12, textAlign: 'center' }}>
-              {scannerStatus === 'running'
-                ? '👇 QR kodni rom ichiga olib keling'
-                : 'Iltimos kuting yoki ruxsat bering'}
-            </p>
 
-            {/* File upload fallback — works even without live camera */}
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: 8 }}>
-                Yoki QR rasmni yuklang (telefonda surat oling)
+            {/* html5-qrcode renders its own UI here (Start button → camera) */}
+            <div id="qr-scanner-target" style={{ width: '100%' }} />
+
+            {/* File upload — guaranteed to work even if camera doesn't */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginBottom: 8 }}>
+                Kamera ishlamasa — QR rasmni yuklang
               </div>
               <label style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                padding: '10px', borderRadius: 9, background: 'rgba(255,107,53,0.15)',
-                border: '1.5px dashed #FF6B35', color: '#FF6B35', cursor: 'pointer',
-                fontSize: 13, fontWeight: 600,
+                padding: '12px', borderRadius: 9, background: '#FF6B35',
+                color: 'white', cursor: 'pointer',
+                fontSize: 14, fontWeight: 600,
               }}>
-                <Camera size={15} />
-                <span>Rasm tanlash / Surat olish</span>
+                <Camera size={16} />
+                <span>📷 Rasm yuklab skanerlash</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -508,8 +450,8 @@ export default function CashierPage() {
                     }
                   }}
                 />
-            <div id="qr-reader-file" style={{ display: 'none' }} />
               </label>
+              <div id="qr-reader-file" style={{ display: 'none' }} />
             </div>
           </div>
         </div>
