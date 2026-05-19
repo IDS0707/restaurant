@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { promoAPI } from '../../api'
 import toast from 'react-hot-toast'
 import { QRCodeCanvas } from 'qrcode.react'
-import { Save, QrCode, Download, Printer, Loader, Check, X } from 'lucide-react'
+import { Save, QrCode, Download, Printer, Loader, Check, X, RotateCcw, Infinity } from 'lucide-react'
 import '../Admin/AdminLayout.css'
 
 export default function AdminPromo() {
@@ -11,6 +11,8 @@ export default function AdminPromo() {
   const [saving, setSaving] = useState(false)
   const [discount, setDiscount] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [usageLimit, setUsageLimit] = useState('0')
+  const [unlimited, setUnlimited] = useState(true)
   const qrRef = useRef(null)
 
   useEffect(() => { load() }, [])
@@ -24,6 +26,8 @@ export default function AdminPromo() {
         setPromo(p)
         setDiscount(p.discount_amount)
         setIsActive(p.is_active)
+        setUsageLimit(String(p.usage_limit || 0))
+        setUnlimited(!p.usage_limit || p.usage_limit === 0)
       }
     } catch (e) {
       toast.error('Юкланмади')
@@ -32,17 +36,22 @@ export default function AdminPromo() {
     }
   }
 
-  const save = async () => {
+  const save = async (opts = {}) => {
     if (!promo) return
     setSaving(true)
     try {
       const amount = parseFloat(discount) || 0
+      const limit = unlimited ? 0 : (parseInt(usageLimit) || 0)
       const r = await promoAPI.update(promo.id, {
         discount_amount: amount,
         is_active: isActive,
+        usage_limit: limit,
+        reset_count: !!opts.reset,
       })
       setPromo(r.data)
-      toast.success('Сақланди')
+      setUsageLimit(String(r.data.usage_limit || 0))
+      setUnlimited(!r.data.usage_limit)
+      toast.success(opts.reset ? 'Сақланди ва ҳисоб тикланди' : 'Сақланди')
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Хатолик')
     } finally {
@@ -105,7 +114,11 @@ export default function AdminPromo() {
 
   const amountChanged = parseFloat(discount) !== Number(promo.discount_amount)
   const activeChanged = isActive !== promo.is_active
-  const dirty = amountChanged || activeChanged
+  const limitChanged = (unlimited ? 0 : parseInt(usageLimit) || 0) !== (promo.usage_limit || 0)
+  const dirty = amountChanged || activeChanged || limitChanged
+
+  const usedUp = promo.usage_limit > 0 && promo.use_count >= promo.usage_limit
+  const remaining = promo.usage_limit > 0 ? Math.max(0, promo.usage_limit - promo.use_count) : null
 
   return (
     <div>
@@ -179,6 +192,88 @@ export default function AdminPromo() {
             </div>
           </div>
 
+          {/* Usage limit */}
+          <div className="adm-field">
+            <label className="adm-label">Амал қилиш муддати (неча марта)</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={() => setUnlimited(true)}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  border: unlimited ? '1.5px solid #2563EB' : '1.5px solid #E5E7EB',
+                  background: unlimited ? '#EFF6FF' : 'white',
+                  color: unlimited ? '#1E40AF' : '#6B7280',
+                }}
+              >
+                <Infinity size={14} /> Чексиз
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnlimited(false)}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+                  border: !unlimited ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
+                  background: !unlimited ? '#FFF4EF' : 'white',
+                  color: !unlimited ? '#FF6B35' : '#6B7280',
+                }}
+              >
+                Чекланган
+              </button>
+            </div>
+            {!unlimited && (
+              <input
+                className="adm-input"
+                type="number"
+                min="1"
+                value={usageLimit}
+                onChange={e => setUsageLimit(e.target.value)}
+                placeholder="Масалан: 5"
+              />
+            )}
+            <div style={{
+              marginTop: 8, padding: '10px 12px', borderRadius: 8,
+              background: usedUp ? '#FEF2F2' : (promo.usage_limit > 0 ? '#F0FDF4' : '#F9FAFB'),
+              border: `1px solid ${usedUp ? '#FECACA' : (promo.usage_limit > 0 ? '#BBF7D0' : '#F3F4F6')}`,
+              fontSize: 13,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#6B7280' }}>Ҳозиргача ишлатилди:</span>
+                <span style={{ fontWeight: 700, color: usedUp ? '#B91C1C' : '#15803D' }}>
+                  {promo.use_count}
+                  {promo.usage_limit > 0 && ` / ${promo.usage_limit}`}
+                </span>
+              </div>
+              {usedUp && (
+                <div style={{ marginTop: 6, color: '#B91C1C', fontWeight: 600, fontSize: 12 }}>
+                  ⛔ Муддат тугаган — кассирга чегирма қўлланилмайди
+                </div>
+              )}
+              {promo.usage_limit > 0 && !usedUp && (
+                <div style={{ marginTop: 4, fontSize: 12, color: '#166534' }}>
+                  Қолди: <b>{remaining}</b> марта
+                </div>
+              )}
+            </div>
+            {promo.use_count > 0 && (
+              <button
+                type="button"
+                onClick={() => save({ reset: true })}
+                disabled={saving}
+                style={{
+                  marginTop: 8, width: '100%', padding: '8px 10px', borderRadius: 8,
+                  border: '1.5px solid #DBEAFE', background: '#EFF6FF', color: '#1E40AF',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, fontSize: 12, fontWeight: 600, fontFamily: 'Inter, sans-serif',
+                }}>
+                <RotateCcw size={12} /> Ҳисобни тиклаш (0 га қайтариш)
+              </button>
+            )}
+          </div>
+
           <div className="adm-field">
             <label className="adm-label">Ҳолат</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -218,7 +313,7 @@ export default function AdminPromo() {
 
           <button
             className="adm-btn adm-btn-primary"
-            onClick={save}
+            onClick={() => save()}
             disabled={saving || !dirty}
             style={{ width: '100%', justifyContent: 'center', marginTop: 8, padding: '12px' }}
           >

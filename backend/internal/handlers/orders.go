@@ -247,16 +247,35 @@ func applyCardDiscount(tx *sql.Tx, cardCode string, totalPrice float64) (float64
 	).Scan(&cardID, &agentID, &cardType, &useCount, &isActive)
 	if err != nil {
 		// Try promo discount code (separate global QR managed in admin)
+		var promoID int
 		var promoDiscount float64
 		var promoActive bool
+		var promoLimit, promoUseCount int
 		promoErr := tx.QueryRow(
-			`SELECT discount_amount, is_active FROM promo_discount WHERE code=$1`, cardCode,
-		).Scan(&promoDiscount, &promoActive)
+			`SELECT id, discount_amount, is_active, COALESCE(usage_limit,0), COALESCE(use_count,0)
+			 FROM promo_discount WHERE code=$1`, cardCode,
+		).Scan(&promoID, &promoDiscount, &promoActive, &promoLimit, &promoUseCount)
 		if promoErr != nil {
 			return 0, 0, 0, fmt.Errorf("card not found")
 		}
 		if !promoActive {
-			return 0, 0, 0, fmt.Errorf("promo is inactive")
+			return 0, 0, 0, fmt.Errorf("Promo deaktivlashtirilgan")
+		}
+		if promoLimit > 0 && promoUseCount >= promoLimit {
+			return 0, 0, 0, fmt.Errorf("Promo muddati tugagan")
+		}
+		// Atomic increment with limit guard
+		res, errInc := tx.Exec(
+			`UPDATE promo_discount SET use_count = use_count + 1
+			 WHERE id=$1 AND is_active=true
+			 AND (usage_limit = 0 OR use_count < usage_limit)`,
+			promoID,
+		)
+		if errInc != nil {
+			return 0, 0, 0, fmt.Errorf("promo update failed")
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return 0, 0, 0, fmt.Errorf("Promo muddati tugagan")
 		}
 		if promoDiscount > totalPrice {
 			promoDiscount = totalPrice

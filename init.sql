@@ -145,6 +145,8 @@ CREATE TABLE IF NOT EXISTS promo_discount (
     code            VARCHAR(40) UNIQUE NOT NULL,
     discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
     is_active       BOOLEAN DEFAULT true,
+    usage_limit     INT DEFAULT 0,
+    use_count       INT DEFAULT 0,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

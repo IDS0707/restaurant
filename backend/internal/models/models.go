@@ -198,6 +198,8 @@ type PromoDiscount struct {
 	Code           string    `json:"code"`
 	DiscountAmount float64   `json:"discount_amount"`
 	IsActive       bool      `json:"is_active"`
+	UsageLimit     int       `json:"usage_limit"`
+	UseCount       int       `json:"use_count"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 

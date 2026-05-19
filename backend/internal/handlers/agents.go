@@ -224,13 +224,19 @@ func ScanCard(c *gin.Context) {
 		// Try as promo QR code
 		var promoDiscount float64
 		var promoActive bool
+		var promoLimit, promoUseCount int
 		promoErr := database.DB.QueryRow(
-			`SELECT discount_amount, is_active FROM promo_discount WHERE code=$1`,
+			`SELECT discount_amount, is_active, COALESCE(usage_limit,0), COALESCE(use_count,0)
+			 FROM promo_discount WHERE code=$1`,
 			body.CardCode,
-		).Scan(&promoDiscount, &promoActive)
+		).Scan(&promoDiscount, &promoActive, &promoLimit, &promoUseCount)
 		if promoErr == nil {
 			if !promoActive {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Promo deaktivlashtirilgan"})
+				return
+			}
+			if promoLimit > 0 && promoUseCount >= promoLimit {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Promo muddati tugagan"})
 				return
 			}
 			discount := promoDiscount
@@ -242,7 +248,8 @@ func ScanCard(c *gin.Context) {
 				"agent_id":    0,
 				"agent_name":  "Promo chegirma",
 				"card_type":   "promo",
-				"use_count":   0,
+				"use_count":   promoUseCount,
+				"usage_limit": promoLimit,
 				"discount":    discount,
 				"bonus_ready": false,
 				"valid":       true,

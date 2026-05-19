@@ -71,6 +71,15 @@ export default function CashierPage() {
     return matchCat && matchSearch && m.available
   })
 
+  // Most expensive available item — always pinned at top
+  const mostExpensive = menu
+    .filter(m => m.available)
+    .reduce((max, m) => (!max || m.price > max.price) ? m : max, null)
+
+  const displayMenu = mostExpensive
+    ? [mostExpensive, ...filtered.filter(m => m.id !== mostExpensive.id)]
+    : filtered
+
   const addToCart = (item) => {
     setCart(prev => {
       const exists = prev.find(c => c.id === item.id)
@@ -262,10 +271,18 @@ export default function CashierPage() {
             </div>
 
             <div className="menu-grid">
-              {filtered.map(item => {
+              {displayMenu.map(item => {
                 const inCart = cart.find(c => c.id === item.id)
+                const isTop = mostExpensive && item.id === mostExpensive.id
                 return (
-                  <div key={item.id} className={`menu-card glass-card ${inCart ? 'in-cart' : ''}`} onClick={() => addToCart(item)}>
+                  <div
+                    key={item.id}
+                    className={`menu-card glass-card ${inCart ? 'in-cart' : ''} ${isTop ? 'menu-card-top' : ''}`}
+                    onClick={() => addToCart(item)}
+                  >
+                    {isTop && (
+                      <div className="menu-card-top-badge">⭐ Eng qimmat</div>
+                    )}
                     <div className="menu-card-body">
                       <h3>{item.name}</h3>
                       <p>{item.description}</p>
