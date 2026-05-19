@@ -168,11 +168,12 @@ export default function CashierPage() {
 
   return (
     <div className="cashier-page">
-      {/* Animated background blobs */}
-      <div className="cashier-bg">
-        <div className="blob blob-1" />
-        <div className="blob blob-2" />
-        <div className="blob blob-3" />
+      {/* Cosmic animated background */}
+      <div className="background-container">
+        <img className="moon" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/1231630/moon2.png" alt="" />
+        <div className="stars" />
+        <div className="twinkling" />
+        <div className="clouds" />
       </div>
 
       <header className="cashier-header">

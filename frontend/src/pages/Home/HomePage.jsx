@@ -32,13 +32,6 @@ export default function HomePage() {
             <p>Buyurtmalarni ko'rish va tayyorlash</p>
             <span className="panel-arrow">→</span>
           </button>
-
-          <button className="home-panel" onClick={() => navigate('/admin')}>
-            <div className="panel-emoji">⚙️</div>
-            <h2>Boshqaruv</h2>
-            <p>Admin paneli va analitika</p>
-            <span className="panel-arrow">→</span>
-          </button>
         </div>
       </div>
     </div>

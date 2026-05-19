@@ -1,68 +1,86 @@
-/* === ANIMATED BACKGROUND === */
+/* === COSMIC ANIMATED BACKGROUND === */
 .cashier-page {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #0d0300 0%, #1c0700 45%, #110400 100%);
+  background: #000;
   overflow: hidden;
   position: relative;
   font-family: 'Inter', sans-serif;
   color: rgba(255, 255, 255, 0.9);
 }
 
-.cashier-bg {
+.background-container {
   position: fixed;
-  inset: 0;
-  pointer-events: none;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 0;
+  pointer-events: none;
+  isolation: isolate;
   overflow: hidden;
 }
 
-.blob {
+.background-container .moon {
+  height: 70vh;
+  width: 70vh;
   position: absolute;
-  border-radius: 50%;
-  filter: blur(70px);
-  will-change: transform;
+  z-index: 4;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
-.blob-1 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(255,107,53,0.75) 0%, rgba(200,50,0,0.4) 60%, transparent 100%);
-  top: -200px;
-  right: -140px;
-  animation: blobMove1 11s ease-in-out infinite alternate;
+.stars {
+  background: black url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/1231630/stars.png") repeat;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: block;
+  z-index: 0;
 }
 
-.blob-2 {
-  width: 480px;
-  height: 480px;
-  background: radial-gradient(circle, rgba(255,150,30,0.65) 0%, rgba(150,40,0,0.35) 60%, transparent 100%);
-  bottom: -130px;
-  left: -100px;
-  animation: blobMove2 14s ease-in-out infinite alternate;
+.twinkling {
+  width: 10000px;
+  height: 100%;
+  background: transparent url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/1231630/twinkling.png") repeat;
+  background-size: 1000px 1000px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  animation: move-background 70s linear infinite;
 }
 
-.blob-3 {
-  width: 360px;
-  height: 360px;
-  background: radial-gradient(circle, rgba(255,90,20,0.5) 0%, rgba(80,15,0,0.2) 60%, transparent 100%);
-  top: 35%;
-  left: 30%;
-  animation: blobMove3 9s ease-in-out infinite alternate;
+.clouds {
+  width: 10000px;
+  height: 100%;
+  background: transparent url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/1231630/clouds_repeat.png") repeat;
+  background-size: 1000px 1000px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  animation: move-background 150s linear infinite;
 }
 
-@keyframes blobMove1 {
-  0%   { transform: translate(0,0) scale(1); }
-  100% { transform: translate(-60px, 80px) scale(1.18); }
+@keyframes move-background {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(1000px, 0, 0); }
 }
-@keyframes blobMove2 {
-  0%   { transform: translate(0,0) scale(1); }
-  100% { transform: translate(70px, -50px) scale(1.12); }
-}
-@keyframes blobMove3 {
-  0%   { transform: translate(0,0) scale(1); opacity: 0.6; }
-  100% { transform: translate(-40px, 60px) scale(1.25); opacity: 0.3; }
+
+/* Keep cashier content above the cosmic background */
+.cashier-page > .cashier-header,
+.cashier-page > .cashier-body,
+.cashier-page > .orders-list-section {
+  position: relative;
+  z-index: 1;
 }
 
 /* === GLASSMORPHISM UTILS === */
