@@ -97,10 +97,11 @@ export default function KitchenPage() {
 
   return (
     <div className="kitchen-page">
-      <div className="kitchen-bg">
-        <div className="k-blob k-blob-1" />
-        <div className="k-blob k-blob-2" />
-        <div className="k-blob k-blob-3" />
+      <div className="background-container">
+        <img className="moon" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/1231630/moon2.png" alt="" />
+        <div className="stars" />
+        <div className="twinkling" />
+        <div className="clouds" />
       </div>
       <header className="kitchen-header">
         <div className="kh-left">

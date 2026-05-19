@@ -83,13 +83,13 @@
   z-index: 1;
 }
 
-/* QR scanner video: force visible regardless of library internals */
-#qr-reader { width: 100%; min-height: 320px; }
-#qr-reader video { width: 100% !important; height: auto !important; display: block !important; }
-#qr-reader > div { background: transparent !important; }
+/* QR scanner video: force visible */
+#qr-reader { width: 100% !important; min-height: 280px; background: #000; }
+#qr-reader video { width: 100% !important; height: auto !important; display: block !important; max-width: 100% !important; }
+#qr-reader img { display: none !important; }
 #qr-reader__dashboard,
-#qr-reader__dashboard_section { display: none !important; }
-#qr-reader__scan_region { background: transparent !important; }
+#qr-reader__dashboard_section,
+#qr-reader__header_message { display: none !important; }
 
 /* === GLASSMORPHISM UTILS === */
 .glass-panel {

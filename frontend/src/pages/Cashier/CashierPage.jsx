@@ -419,32 +419,46 @@ export default function CashierPage() {
           className="order-success-modal"
           onClick={e => e.target === e.currentTarget && setScannerOpen(false)}
         >
-          <div className="order-success-card slide-in" style={{ maxWidth: 420, padding: 20 }}>
-            <button className="modal-close" onClick={() => setScannerOpen(false)}><X size={20} /></button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, justifyContent: 'center' }}>
-              <Camera size={22} color="#FF6B35" />
-              <h2 style={{ margin: 0, fontSize: 18 }}>QR kodni skanerlash</h2>
+          <div className="order-success-card slide-in" style={{ maxWidth: 460, padding: 16, background: '#0f0a08', color: 'white', border: '1px solid rgba(255,107,53,0.3)' }}>
+            <button className="modal-close" onClick={() => setScannerOpen(false)} style={{ color: 'white' }}><X size={20} /></button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, justifyContent: 'center', color: '#FF6B35' }}>
+              <Camera size={22} />
+              <h2 style={{ margin: 0, fontSize: 18, color: '#FF6B35' }}>QR kodni skanerlash</h2>
             </div>
-            <div className="qr-reader-wrap" style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', minHeight: 320 }}>
-              <div id="qr-reader" style={{ width: '100%' }} />
+            <div style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', minHeight: 320, border: '2px solid #FF6B35' }}>
+              <div id="qr-reader" />
               {scannerStatus !== 'running' && (
                 <div style={{
                   position: 'absolute', inset: 0, display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontSize: 14, textAlign: 'center', padding: 16,
-                  background: 'rgba(0,0,0,0.5)',
+                  color: 'white', fontSize: 15, textAlign: 'center', padding: 24,
+                  background: 'rgba(0,0,0,0.85)',
+                  zIndex: 10,
                 }}>
-                  {scannerStatus === 'loading'
-                    ? 'Kamera yuklanmoqda...'
-                    : (scannerStatus || 'Kamera tayyorlanmoqda...')}
+                  <div style={{ fontSize: 40, marginBottom: 10 }}>
+                    {scannerStatus.startsWith('Xato') ? '⚠️' : '📷'}
+                  </div>
+                  <div style={{ fontWeight: 600 }}>
+                    {scannerStatus === 'loading'
+                      ? 'Kamera yuklanmoqda...'
+                      : (scannerStatus || 'Kamera tayyorlanmoqda...')}
+                  </div>
+                  {scannerStatus === 'loading' && (
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 8 }}>
+                      Brauzer kameraga ruxsat so'raydi — «Allow» bosing
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-            <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12, textAlign: 'center' }}>
-              Karta QR kodini kameraga ko'rsating
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 12, textAlign: 'center' }}>
+              {scannerStatus === 'running'
+                ? '👇 QR kodni rom ichiga olib keling'
+                : 'Iltimos kuting yoki ruxsat bering'}
             </p>
             {scannerStatus.startsWith('Xato') && (
-              <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4, textAlign: 'center' }}>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4, textAlign: 'center' }}>
                 Yoki kartadagi raqamni qo'lda terib, ✓ tugmasini bosing
               </p>
             )}
