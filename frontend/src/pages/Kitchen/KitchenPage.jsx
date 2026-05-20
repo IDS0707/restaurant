@@ -174,7 +174,7 @@ export default function KitchenPage() {
             <span className="kh-badge-empty">Buyurtma yo'q</span>
           )}
         </div>
-        <button className="kh-refresh" onClick={load}>
+        <button className="kh-refresh" onClick={() => pollOrders()}>
           <RefreshCw size={16} /> Yangilash
         </button>
       </header>
