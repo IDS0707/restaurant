@@ -13,6 +13,7 @@ import AdminMenuDetail from './pages/Admin/AdminMenuDetail'
 import AdminInventory from './pages/Admin/AdminInventory'
 import AdminAgents from './pages/Admin/AdminAgents'
 import AdminPromo from './pages/Admin/AdminPromo'
+import AdminVip from './pages/Admin/AdminVip'
 import AdminAnalytics from './pages/Admin/AdminAnalytics'
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="inventory" element={<AdminInventory />} />
           <Route path="agents" element={<AdminAgents />} />
           <Route path="promo" element={<AdminPromo />} />
+          <Route path="vip" element={<AdminVip />} />
           <Route path="analytics" element={<AdminAnalytics />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

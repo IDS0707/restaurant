@@ -197,10 +197,21 @@ type PromoDiscount struct {
 	ID             int       `json:"id"`
 	Code           string    `json:"code"`
 	DiscountAmount float64   `json:"discount_amount"`
+	DiscountType   string    `json:"discount_type"` // 'amount' | 'percent'
 	IsActive       bool      `json:"is_active"`
 	UsageLimit     int       `json:"usage_limit"`
 	UseCount       int       `json:"use_count"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type VipCard struct {
+	ID        int       `json:"id"`
+	Code      string    `json:"code"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	IsActive  bool      `json:"is_active"`
+	UseCount  int       `json:"use_count"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type InventoryLog struct {

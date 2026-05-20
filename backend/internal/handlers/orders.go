@@ -246,15 +246,32 @@ func applyCardDiscount(tx *sql.Tx, cardCode string, totalPrice float64) (float64
 		 FROM referral_cards rc WHERE rc.card_code=$1`, cardCode,
 	).Scan(&cardID, &agentID, &cardType, &useCount, &isActive)
 	if err != nil {
+		// Try VIP card (full order = free)
+		var vipID int
+		var vipActive bool
+		vipErr := tx.QueryRow(
+			`SELECT id, is_active FROM vip_cards WHERE code=$1`, cardCode,
+		).Scan(&vipID, &vipActive)
+		if vipErr == nil {
+			if !vipActive {
+				return 0, 0, 0, fmt.Errorf("VIP karta deaktivlashtirilgan")
+			}
+			// Increment use count (no limit on VIP)
+			tx.Exec(`UPDATE vip_cards SET use_count = use_count + 1 WHERE id=$1`, vipID)
+			return totalPrice, 0, 0, nil // discount = totalPrice → final 0
+		}
+
 		// Try promo discount code (separate global QR managed in admin)
 		var promoID int
 		var promoDiscount float64
+		var promoType string
 		var promoActive bool
 		var promoLimit, promoUseCount int
 		promoErr := tx.QueryRow(
-			`SELECT id, discount_amount, is_active, COALESCE(usage_limit,0), COALESCE(use_count,0)
+			`SELECT id, discount_amount, COALESCE(discount_type,'amount'), is_active,
+			        COALESCE(usage_limit,0), COALESCE(use_count,0)
 			 FROM promo_discount WHERE code=$1`, cardCode,
-		).Scan(&promoID, &promoDiscount, &promoActive, &promoLimit, &promoUseCount)
+		).Scan(&promoID, &promoDiscount, &promoType, &promoActive, &promoLimit, &promoUseCount)
 		if promoErr != nil {
 			return 0, 0, 0, fmt.Errorf("card not found")
 		}
@@ -277,10 +294,16 @@ func applyCardDiscount(tx *sql.Tx, cardCode string, totalPrice float64) (float64
 		if n, _ := res.RowsAffected(); n == 0 {
 			return 0, 0, 0, fmt.Errorf("Promo muddati tugagan")
 		}
-		if promoDiscount > totalPrice {
-			promoDiscount = totalPrice
+		var discount float64
+		if promoType == "percent" {
+			discount = totalPrice * promoDiscount / 100.0
+		} else {
+			discount = promoDiscount
 		}
-		return promoDiscount, 0, 0, nil
+		if discount > totalPrice {
+			discount = totalPrice
+		}
+		return discount, 0, 0, nil
 	}
 	if !isActive {
 		return 0, 0, 0, fmt.Errorf("card is inactive")

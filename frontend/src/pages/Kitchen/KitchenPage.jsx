@@ -24,34 +24,86 @@ export default function KitchenPage() {
   const [loading, setLoading] = useState(true)
   const [completing, setCompleting] = useState(null)
   const wsRef = useRef(null)
-  const timerRef = useRef(null)
+  const reconnectRef = useRef(null)
+  const pollRef = useRef(null)
+  const tickRef = useRef(null)
+  const seenIdsRef = useRef(new Set())
   const [, forceUpdate] = useState(0)
 
   useEffect(() => {
-    load()
+    initialLoad()
     connectWS()
-    timerRef.current = setInterval(() => forceUpdate(n => n + 1), 30000)
+    // Fast polling fallback — runs every 1 second.
+    // If WS already delivered the order, the de-dupe by ID prevents double sound/toast.
+    pollRef.current = setInterval(() => pollOrders(), 1000)
+    // Refresh the elapsed-time labels every 30s
+    tickRef.current = setInterval(() => forceUpdate(n => n + 1), 30000)
     return () => {
       wsRef.current?.close()
-      clearInterval(timerRef.current)
+      clearInterval(pollRef.current)
+      clearInterval(tickRef.current)
+      if (reconnectRef.current) clearTimeout(reconnectRef.current)
     }
   }, [])
 
+  const handleNewOrder = (order) => {
+    if (!order || !order.id) return
+    if (seenIdsRef.current.has(order.id)) return
+    seenIdsRef.current.add(order.id)
+    setOrders(prev => {
+      if (prev.some(o => o.id === order.id)) return prev
+      return [order, ...prev]
+    })
+    playSound()
+    toast(`Yangi buyurtma! #${order.order_code}`, { icon: '🔔', duration: 6000 })
+  }
+
   const connectWS = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (msg.type === 'new_order') {
-        setOrders(prev => [msg.payload, ...prev])
-        playSound()
-        toast(`Yangi buyurtma! #${msg.payload.order_code}`, { icon: '🔔', duration: 6000 })
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+      ws.onmessage = (e) => {
+        let msg
+        try { msg = JSON.parse(e.data) } catch { return }
+        if (msg.type === 'new_order') {
+          handleNewOrder(msg.payload)
+        }
+        if (msg.type === 'order_status_changed') {
+          setOrders(prev => prev.filter(o => o.id !== msg.payload.id))
+        }
       }
-      if (msg.type === 'order_status_changed') {
-        setOrders(prev => prev.filter(o => o.id !== msg.payload.id))
+      ws.onclose = () => {
+        // Auto-reconnect in 2s — tunnel/Cloudflare may drop idle sockets
+        if (reconnectRef.current) clearTimeout(reconnectRef.current)
+        reconnectRef.current = setTimeout(connectWS, 2000)
       }
+      ws.onerror = () => {
+        try { ws.close() } catch {}
+      }
+      wsRef.current = ws
+    } catch {
+      // If WS construction failed, retry shortly
+      reconnectRef.current = setTimeout(connectWS, 2000)
     }
-    wsRef.current = ws
+  }
+
+  // Polling fallback — catches orders even if WS is broken
+  const pollOrders = async () => {
+    try {
+      const res = await ordersAPI.getAll()
+      const pending = (res.data || []).filter(o => o.status === 'pending')
+      // Seed seenIds with the current order set so we don't beep for everything on first run
+      if (seenIdsRef.current.size === 0) {
+        pending.forEach(o => seenIdsRef.current.add(o.id))
+        setOrders(pending)
+        return
+      }
+      // Detect orders we haven't seen yet
+      const fresh = pending.filter(o => !seenIdsRef.current.has(o.id))
+      fresh.forEach(o => handleNewOrder(o))
+      // Drop orders that are no longer pending (e.g. served by another client)
+      setOrders(prev => prev.filter(o => pending.some(p => p.id === o.id)))
+    } catch {}
   }
 
   const playSound = () => {
@@ -70,11 +122,14 @@ export default function KitchenPage() {
     } catch {}
   }
 
-  const load = async () => {
+  const initialLoad = async () => {
     setLoading(true)
     try {
       const res = await ordersAPI.getAll()
-      setOrders(res.data.filter(o => o.status === 'pending'))
+      const pending = (res.data || []).filter(o => o.status === 'pending')
+      // Mark all existing orders as 'seen' so we don't ring bell for them
+      pending.forEach(o => seenIdsRef.current.add(o.id))
+      setOrders(pending)
     } catch { toast.error('Yuklanmadi') }
     finally { setLoading(false) }
   }

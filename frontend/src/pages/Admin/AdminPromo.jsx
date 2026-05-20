@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { promoAPI } from '../../api'
 import toast from 'react-hot-toast'
 import { QRCodeCanvas } from 'qrcode.react'
-import { Save, QrCode, Download, Printer, Loader, Check, X, RotateCcw, Infinity } from 'lucide-react'
+import { Save, QrCode, Download, Printer, Loader, Check, X, RotateCcw, Infinity, Percent, DollarSign } from 'lucide-react'
 import '../Admin/AdminLayout.css'
 
 export default function AdminPromo() {
@@ -10,6 +10,7 @@ export default function AdminPromo() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [discount, setDiscount] = useState('')
+  const [discountType, setDiscountType] = useState('amount') // 'amount' | 'percent'
   const [isActive, setIsActive] = useState(true)
   const [usageLimit, setUsageLimit] = useState('0')
   const [unlimited, setUnlimited] = useState(true)
@@ -25,6 +26,7 @@ export default function AdminPromo() {
         const p = r.data[0]
         setPromo(p)
         setDiscount(p.discount_amount)
+        setDiscountType(p.discount_type || 'amount')
         setIsActive(p.is_active)
         setUsageLimit(String(p.usage_limit || 0))
         setUnlimited(!p.usage_limit || p.usage_limit === 0)
@@ -44,11 +46,13 @@ export default function AdminPromo() {
       const limit = unlimited ? 0 : (parseInt(usageLimit) || 0)
       const r = await promoAPI.update(promo.id, {
         discount_amount: amount,
+        discount_type: discountType,
         is_active: isActive,
         usage_limit: limit,
         reset_count: !!opts.reset,
       })
       setPromo(r.data)
+      setDiscountType(r.data.discount_type || 'amount')
       setUsageLimit(String(r.data.usage_limit || 0))
       setUnlimited(!r.data.usage_limit)
       toast.success(opts.reset ? 'Сақланди ва ҳисоб тикланди' : 'Сақланди')
@@ -75,6 +79,13 @@ export default function AdminPromo() {
     const url = canvas.toDataURL('image/png')
     const w = window.open('', '_blank')
     if (!w) return
+    const isPercent = discountType === 'percent'
+    const valTxt = isPercent
+      ? `${parseFloat(discount || 0)}% chegirma`
+      : `${parseFloat(discount || 0).toLocaleString()} so'm chegirma`
+    const explain = isPercent
+      ? `QR kodni kassirga ko'rsating — buyurtmangizdan ${parseFloat(discount || 0)}% chegirma olasiz`
+      : `QR kodni kassirga ko'rsating — buyurtmangizdan ${parseFloat(discount || 0).toLocaleString()} so'm chegirma olasiz`
     w.document.write(`
       <html>
         <head><title>Promo QR — ${promo?.code}</title>
@@ -89,10 +100,10 @@ export default function AdminPromo() {
         </head>
         <body>
           <h1>ECO taomlar — Promo</h1>
-          <h2>${parseFloat(discount || 0).toLocaleString()} so'm chegirma</h2>
+          <h2>${valTxt}</h2>
           <img src="${url}" />
           <div class="code">${promo?.code}</div>
-          <p>QR kodni kassirga ko'rsating — buyurtmangizdan ${parseFloat(discount || 0).toLocaleString()} so'm chegirma olasiz</p>
+          <p>${explain}</p>
           <script>window.onload = () => setTimeout(() => window.print(), 300)</script>
         </body>
       </html>
@@ -113,9 +124,10 @@ export default function AdminPromo() {
   }
 
   const amountChanged = parseFloat(discount) !== Number(promo.discount_amount)
+  const typeChanged = discountType !== (promo.discount_type || 'amount')
   const activeChanged = isActive !== promo.is_active
   const limitChanged = (unlimited ? 0 : parseInt(usageLimit) || 0) !== (promo.usage_limit || 0)
-  const dirty = amountChanged || activeChanged || limitChanged
+  const dirty = amountChanged || typeChanged || activeChanged || limitChanged
 
   const usedUp = promo.usage_limit > 0 && promo.use_count >= promo.usage_limit
   const remaining = promo.usage_limit > 0 ? Math.max(0, promo.usage_limit - promo.use_count) : null
@@ -175,20 +187,62 @@ export default function AdminPromo() {
         <div className="adm-card">
           <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 16 }}>⚙️ Созламалар</h3>
 
+          {/* Discount type toggle */}
           <div className="adm-field">
-            <label className="adm-label">Чегирма миқдори (сум) *</label>
+            <label className="adm-label">Чегирма тури</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setDiscountType('amount')}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  border: discountType === 'amount' ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
+                  background: discountType === 'amount' ? '#FFF4EF' : 'white',
+                  color: discountType === 'amount' ? '#FF6B35' : '#6B7280',
+                }}
+              >
+                <DollarSign size={14} /> Сумма (сум)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType('percent')}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  border: discountType === 'percent' ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
+                  background: discountType === 'percent' ? '#FFF4EF' : 'white',
+                  color: discountType === 'percent' ? '#FF6B35' : '#6B7280',
+                }}
+              >
+                <Percent size={14} /> Фоиз (%)
+              </button>
+            </div>
+          </div>
+
+          <div className="adm-field">
+            <label className="adm-label">
+              {discountType === 'percent' ? 'Чегирма фоизи (%)' : 'Чегирма миқдори (сум)'} *
+            </label>
             <input
               className="adm-input"
               type="number"
-              step="1000"
+              step={discountType === 'percent' ? '1' : '1000'}
               min="0"
+              max={discountType === 'percent' ? '100' : undefined}
               value={discount}
               onChange={e => setDiscount(e.target.value)}
-              placeholder="Масалан: 15000"
+              placeholder={discountType === 'percent' ? 'Масалан: 10' : 'Масалан: 15000'}
               style={{ fontSize: 24, fontWeight: 800, color: '#15803D', textAlign: 'center', padding: '14px 16px' }}
             />
             <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
-              Ҳозирги қиймат: <b>{Number(promo.discount_amount).toLocaleString()} сум</b>
+              Ҳозирги қиймат:&nbsp;
+              <b>
+                {Number(promo.discount_amount).toLocaleString()}
+                {(promo.discount_type || 'amount') === 'percent' ? '%' : ' сум'}
+              </b>
             </div>
           </div>
 

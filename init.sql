@@ -144,12 +144,24 @@ CREATE TABLE IF NOT EXISTS promo_discount (
     id              SERIAL PRIMARY KEY,
     code            VARCHAR(40) UNIQUE NOT NULL,
     discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    discount_type   VARCHAR(10) DEFAULT 'amount',
     is_active       BOOLEAN DEFAULT true,
     usage_limit     INT DEFAULT 0,
     use_count       INT DEFAULT 0,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO promo_discount (code, discount_amount, is_active)
-VALUES ('PROMO-MAIN', 15000, true)
+INSERT INTO promo_discount (code, discount_amount, discount_type, is_active)
+VALUES ('PROMO-MAIN', 15000, 'amount', true)
 ON CONFLICT (code) DO NOTHING;
+
+-- VIP cards (per-person free meal QR)
+CREATE TABLE IF NOT EXISTS vip_cards (
+    id          SERIAL PRIMARY KEY,
+    code        VARCHAR(40) UNIQUE NOT NULL,
+    first_name  VARCHAR(100) NOT NULL,
+    last_name   VARCHAR(100) DEFAULT '',
+    is_active   BOOLEAN DEFAULT true,
+    use_count   INT DEFAULT 0,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

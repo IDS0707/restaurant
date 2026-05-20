@@ -88,6 +88,12 @@ func main() {
 		// Promo QR discount
 		admin.GET("/promo", handlers.GetPromoDiscount)
 		admin.PUT("/promo/:id", handlers.UpdatePromoDiscount)
+
+		// VIP cards
+		admin.GET("/vip", handlers.GetVipCards)
+		admin.POST("/vip", handlers.CreateVipCard)
+		admin.PUT("/vip/:id", handlers.UpdateVipCard)
+		admin.DELETE("/vip/:id", handlers.DeleteVipCard)
 	}
 
 	port := os.Getenv("PORT")

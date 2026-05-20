@@ -74,6 +74,13 @@ export const promoAPI = {
   update: (id, data) => api.put(`/admin/promo/${id}`, data),
 }
 
+export const vipAPI = {
+  getAll: () => api.get('/admin/vip'),
+  create: (data) => api.post('/admin/vip', data),
+  update: (id, data) => api.put(`/admin/vip/${id}`, data),
+  delete: (id) => api.delete(`/admin/vip/${id}`),
+}
+
 export const authAPI = {
   login: (username, password) => api.post('/auth/login', { username, password }),
 }
