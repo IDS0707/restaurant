@@ -33,9 +33,9 @@ export default function KitchenPage() {
   useEffect(() => {
     initialLoad()
     connectWS()
-    // Fast polling fallback — runs every 1 second.
+    // Fast polling fallback — runs every 500 ms (real-time feel).
     // If WS already delivered the order, the de-dupe by ID prevents double sound/toast.
-    pollRef.current = setInterval(() => pollOrders(), 1000)
+    pollRef.current = setInterval(() => pollOrders(), 500)
     // Refresh the elapsed-time labels every 30s
     tickRef.current = setInterval(() => forceUpdate(n => n + 1), 30000)
     return () => {
