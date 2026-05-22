@@ -16,6 +16,8 @@ import AdminAgents from './pages/Admin/AdminAgents'
 import AdminPromo from './pages/Admin/AdminPromo'
 import AdminVip from './pages/Admin/AdminVip'
 import AdminAnalytics from './pages/Admin/AdminAnalytics'
+import AdminCouriers from './pages/Admin/AdminCouriers'
+import CourierPage from './pages/Courier/CourierPage'
 
 export default function App() {
   return (
@@ -30,6 +32,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/shop" element={<ShopPage />} />
+        <Route path="/courier" element={<CourierPage />} />
         <Route path="/cashier" element={<CashierPage />} />
         <Route path="/kitchen" element={<KitchenPage />} />
         <Route path="/admin" element={<AdminLogin />} />
@@ -42,6 +45,7 @@ export default function App() {
           <Route path="agents" element={<AdminAgents />} />
           <Route path="promo" element={<AdminPromo />} />
           <Route path="vip" element={<AdminVip />} />
+          <Route path="couriers" element={<AdminCouriers />} />
           <Route path="analytics" element={<AdminAnalytics />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

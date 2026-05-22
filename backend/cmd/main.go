@@ -62,6 +62,20 @@ func main() {
 		customer.POST("/orders/:code/cancel", handlers.CustomerCancelOrder)
 	}
 
+	// Courier (delivery rider) routes
+	api.POST("/courier/login", handlers.CourierLogin)
+	api.GET("/courier/courier-of/:code", handlers.PublicCourierForOrder)
+	courier := r.Group("/api/courier")
+	courier.Use(middleware.CourierAuth())
+	{
+		courier.GET("/me", handlers.CourierMe)
+		courier.GET("/orders/available", handlers.CourierAvailableOrders)
+		courier.GET("/orders/mine", handlers.CourierMyOrders)
+		courier.POST("/orders/:id/accept", handlers.CourierAcceptOrder)
+		courier.POST("/orders/:id/complete", handlers.CourierCompleteOrder)
+		courier.POST("/location", handlers.CourierUpdateLocation)
+	}
+
 	// Admin routes (protected)
 	admin := r.Group("/api/admin")
 	admin.Use(middleware.AdminAuth())
@@ -116,6 +130,12 @@ func main() {
 		admin.POST("/vip", handlers.CreateVipCard)
 		admin.PUT("/vip/:id", handlers.UpdateVipCard)
 		admin.DELETE("/vip/:id", handlers.DeleteVipCard)
+
+		// Couriers
+		admin.GET("/couriers", handlers.AdminListCouriers)
+		admin.POST("/couriers", handlers.AdminCreateCourier)
+		admin.PUT("/couriers/:id", handlers.AdminUpdateCourier)
+		admin.DELETE("/couriers/:id", handlers.AdminDeleteCourier)
 	}
 
 	port := os.Getenv("PORT")

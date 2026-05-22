@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { menuAPI, ordersAPI, customerAPI, promoAPI } from '../../api'
+import { menuAPI, ordersAPI, customerAPI, promoAPI, courierAPI } from '../../api'
 import toast from 'react-hot-toast'
 import { Geolocation } from '@capacitor/geolocation'
 import { Capacitor } from '@capacitor/core'
@@ -104,6 +104,10 @@ export default function ShopPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
 
+  // Courier tracking for the currently active "on_way" order
+  const [courierInfo, setCourierInfo] = useState(null) // { first_name, phone, current_lat, current_lng }
+  const wsRef = useRef(null)
+
   useEffect(() => { localStorage.setItem('shop_cart', JSON.stringify(cart)) }, [cart])
 
   // Check auth on mount
@@ -167,6 +171,43 @@ export default function ShopPage() {
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, orders])
+
+  // Fetch courier info for an on_way order + WebSocket listen for live updates
+  useEffect(() => {
+    const onWayOrder = orders.find(o => o.status === 'on_way')
+    if (!onWayOrder) { setCourierInfo(null); return }
+
+    // Initial fetch
+    courierAPI.publicForOrder(onWayOrder.order_code)
+      .then(r => setCourierInfo(r.data))
+      .catch(() => {})
+
+    // WebSocket — listen for courier_location updates
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    try {
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+      wsRef.current = ws
+      ws.onmessage = (e) => {
+        let msg
+        try { msg = JSON.parse(e.data) } catch { return }
+        if (msg.type === 'courier_location' && msg.payload?.order_code === onWayOrder.order_code) {
+          setCourierInfo(prev => ({
+            ...(prev || {}),
+            current_lat: msg.payload.lat,
+            current_lng: msg.payload.lng,
+            last_seen_at: new Date().toISOString(),
+          }))
+        }
+        if (msg.type === 'order_status_changed' && msg.payload?.id === onWayOrder.id) {
+          loadOrders(false)
+        }
+      }
+      ws.onerror = () => { try { ws.close() } catch {} }
+    } catch {}
+
+    return () => { try { wsRef.current?.close() } catch {} }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders])
 
   const loadOrders = async (showLoader = true) => {
     if (showLoader) setLoadingOrders(true)
@@ -874,6 +915,29 @@ export default function ShopPage() {
 
                     {o.status !== 'rejected' && (
                       <OrderProgress status={o.status} tr={tr} />
+                    )}
+
+                    {/* Courier card shown for the active on_way order */}
+                    {o.status === 'on_way' && courierInfo && (
+                      <div className="shop-courier-card">
+                        <div className="shop-courier-avatar">🛵</div>
+                        <div className="shop-courier-info">
+                          <div className="shop-courier-name">{courierInfo.first_name} {courierInfo.last_name || ''}</div>
+                          {courierInfo.phone && (
+                            <a href={`tel:${courierInfo.phone}`} className="shop-courier-phone">
+                              <Phone size={11} /> {courierInfo.phone}
+                            </a>
+                          )}
+                        </div>
+                        {courierInfo.current_lat && courierInfo.current_lng && (
+                          <a className="shop-courier-map"
+                             href={`https://yandex.uz/maps/?ll=${courierInfo.current_lng},${courierInfo.current_lat}&z=16&pt=${courierInfo.current_lng},${courierInfo.current_lat}`}
+                             target="_blank" rel="noreferrer">
+                            <MapPin size={13} />
+                            Xaritada
+                          </a>
+                        )}
+                      </div>
                     )}
 
                     <ul className="shop-order-items">

@@ -253,3 +253,17 @@ type InventoryLog struct {
 	Notes          string    `json:"notes"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+// Courier — delivery rider account. PIN-based login (no SMS).
+type Courier struct {
+	ID         int        `json:"id"`
+	Phone      string     `json:"phone"`
+	FirstName  string     `json:"first_name"`
+	LastName   string     `json:"last_name"`
+	PIN        string     `json:"pin,omitempty"` // never sent back except to admin
+	IsActive   bool       `json:"is_active"`
+	CurrentLat *float64   `json:"current_lat,omitempty"`
+	CurrentLng *float64   `json:"current_lng,omitempty"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}

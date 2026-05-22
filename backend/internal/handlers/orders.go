@@ -553,7 +553,23 @@ func UpdateOrderStatus(c *gin.Context) {
 	}
 
 	var order models.Order
-	database.DB.QueryRow(`SELECT id, order_code, status FROM orders WHERE id=$1`, id).Scan(&order.ID, &order.OrderCode, &order.Status)
+	database.DB.QueryRow(
+		`SELECT id, order_code, total_price, discount_amount, final_price, status,
+		        COALESCE(card_code,''), COALESCE(note,''),
+		        COALESCE(customer_first_name,''), COALESCE(customer_last_name,''),
+		        COALESCE(customer_phone,''), COALESCE(delivery_type,'pickup'),
+		        COALESCE(delivery_address,''), delivery_lat, delivery_lng,
+		        created_at, updated_at
+		 FROM orders WHERE id=$1`, id,
+	).Scan(&order.ID, &order.OrderCode, &order.TotalPrice, &order.DiscountAmount, &order.FinalPrice,
+		&order.Status, &order.CardCode, &order.Note,
+		&order.CustomerFirstName, &order.CustomerLastName, &order.CustomerPhone,
+		&order.DeliveryType, &order.DeliveryAddress, &order.DeliveryLat, &order.DeliveryLng,
+		&order.CreatedAt, &order.UpdatedAt)
 	BroadcastMessage("order_status_changed", order)
+	// When an order becomes "ready" AND it's a delivery, alert couriers about a new pickup
+	if body.Status == "ready" && order.DeliveryType == "delivery" {
+		BroadcastMessage("new_ready_order", order)
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Status updated", "order": order})
 }
