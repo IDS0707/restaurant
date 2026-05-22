@@ -343,3 +343,41 @@
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+/* Customer + delivery info */
+.korder-customer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  background: rgba(255, 107, 53, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 107, 53, 0.18);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.korder-customer > div,
+.korder-customer > a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+}
+.korder-customer a:hover {
+  color: #FF6B35;
+}
+.korder-delivery {
+  flex-wrap: wrap;
+  font-weight: 500;
+}
+.korder-map-link {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: rgba(255, 107, 53, 0.25);
+  border-radius: 100px;
+  color: #FFB48A !important;
+  font-size: 11px;
+  font-weight: 600;
+}

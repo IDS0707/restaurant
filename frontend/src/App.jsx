@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import HomePage from './pages/Home/HomePage'
 import CashierPage from './pages/Cashier/CashierPage'
 import KitchenPage from './pages/Kitchen/KitchenPage'
+import ShopPage from './pages/Shop/ShopPage'
 import AdminLogin from './pages/Admin/AdminLogin'
 import AdminLayout from './pages/Admin/AdminLayout'
 import AdminDashboard from './pages/Admin/AdminDashboard'
@@ -28,6 +29,7 @@ export default function App() {
       />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/shop" element={<ShopPage />} />
         <Route path="/cashier" element={<CashierPage />} />
         <Route path="/kitchen" element={<KitchenPage />} />
         <Route path="/admin" element={<AdminLogin />} />

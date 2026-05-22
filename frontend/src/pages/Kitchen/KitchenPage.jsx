@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { ordersAPI } from '../../api'
 import toast from 'react-hot-toast'
-import { ChefHat, Bell, Home, RefreshCw, CheckCircle, Clock } from 'lucide-react'
+import { ChefHat, Bell, Home, RefreshCw, CheckCircle, Clock, MapPin, Phone, Truck, Store, User } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import './KitchenPage.css'
 
@@ -197,6 +197,34 @@ export default function KitchenPage() {
                     {fmtTime(order.created_at)} · {fmtElapsed(order.created_at)}
                   </span>
                 </div>
+
+                {(order.customer_first_name || order.customer_phone) && (
+                  <div className="korder-customer">
+                    {order.customer_first_name && (
+                      <div><User size={12} /> {order.customer_first_name} {order.customer_last_name || ''}</div>
+                    )}
+                    {order.customer_phone && (
+                      <a href={`tel:${order.customer_phone}`}><Phone size={12} /> {order.customer_phone}</a>
+                    )}
+                    {order.delivery_type === 'delivery' ? (
+                      <div className="korder-delivery">
+                        <Truck size={12} />
+                        <span>{order.delivery_address || 'Manzil yo\'q'}</span>
+                        {order.delivery_lat && order.delivery_lng && (
+                          <a
+                            href={`https://yandex.uz/maps/?ll=${order.delivery_lng},${order.delivery_lat}&z=17&pt=${order.delivery_lng},${order.delivery_lat}`}
+                            target="_blank" rel="noreferrer"
+                            className="korder-map-link"
+                          >
+                            <MapPin size={12} /> Xaritada
+                          </a>
+                        )}
+                      </div>
+                    ) : order.customer_phone ? (
+                      <div className="korder-delivery"><Store size={12} /> Olib ketadi</div>
+                    ) : null}
+                  </div>
+                )}
 
                 {order.items?.length > 0 && (
                   <ul className="korder-items">

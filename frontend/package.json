@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "android:sync": "vite build && cap sync android",
+    "android:open": "cap open android"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -17,12 +19,16 @@
     "react-hot-toast": "^2.4.1",
     "qrcode.react": "^3.1.0",
     "html5-qrcode": "^2.3.8",
-    "lucide-react": "^0.323.0"
+    "lucide-react": "^0.323.0",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/geolocation": "^6.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.1.0"
+    "vite": "^5.1.0",
+    "@capacitor/cli": "^6.1.2"
   }
 }

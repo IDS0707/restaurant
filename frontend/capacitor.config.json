@@ -1,0 +1,13 @@
+{
+  "appId": "uz.ecotaomlar.shop",
+  "appName": "ECO taomlar",
+  "webDir": "dist",
+  "server": {
+    "url": "https://authorization-composite-brain-quotes.trycloudflare.com/shop",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

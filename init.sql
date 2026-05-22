@@ -25,6 +25,13 @@ CREATE TABLE orders (
     status VARCHAR(20) DEFAULT 'pending',
     card_code VARCHAR(20),
     note TEXT,
+    customer_first_name VARCHAR(100),
+    customer_last_name  VARCHAR(100),
+    customer_phone      VARCHAR(30),
+    delivery_type       VARCHAR(20) DEFAULT 'pickup',
+    delivery_address    TEXT,
+    delivery_lat        DOUBLE PRECISION,
+    delivery_lng        DOUBLE PRECISION,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

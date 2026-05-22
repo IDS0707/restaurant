@@ -32,17 +32,24 @@ type MenuItemDetail struct {
 }
 
 type Order struct {
-	ID             int         `json:"id"`
-	OrderCode      string      `json:"order_code"`
-	TotalPrice     float64     `json:"total_price"`
-	DiscountAmount float64     `json:"discount_amount"`
-	FinalPrice     float64     `json:"final_price"`
-	Status         string      `json:"status"`
-	CardCode       string      `json:"card_code"`
-	Note           string      `json:"note"`
-	Items          []OrderItem `json:"items,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	ID                int         `json:"id"`
+	OrderCode         string      `json:"order_code"`
+	TotalPrice        float64     `json:"total_price"`
+	DiscountAmount    float64     `json:"discount_amount"`
+	FinalPrice        float64     `json:"final_price"`
+	Status            string      `json:"status"`
+	CardCode          string      `json:"card_code"`
+	Note              string      `json:"note"`
+	CustomerFirstName string      `json:"customer_first_name"`
+	CustomerLastName  string      `json:"customer_last_name"`
+	CustomerPhone     string      `json:"customer_phone"`
+	DeliveryType      string      `json:"delivery_type"`
+	DeliveryAddress   string      `json:"delivery_address"`
+	DeliveryLat       *float64    `json:"delivery_lat,omitempty"`
+	DeliveryLng       *float64    `json:"delivery_lng,omitempty"`
+	Items             []OrderItem `json:"items,omitempty"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
 }
 
 type OrderItem struct {
