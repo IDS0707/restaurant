@@ -211,6 +211,25 @@ type PromoDiscount struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type Customer struct {
+	ID        int       `json:"id"`
+	Phone     string    `json:"phone"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CustomerAddress struct {
+	ID         int       `json:"id"`
+	CustomerID int       `json:"customer_id"`
+	Label      string    `json:"label"`
+	Address    string    `json:"address"`
+	Lat        *float64  `json:"lat,omitempty"`
+	Lng        *float64  `json:"lng,omitempty"`
+	IsDefault  bool      `json:"is_default"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type VipCard struct {
 	ID        int       `json:"id"`
 	Code      string    `json:"code"`

@@ -34,12 +34,28 @@ func main() {
 		api.POST("/auth/login", handlers.Login)
 		api.GET("/menu", handlers.GetMenu)
 		api.GET("/orders/:code", handlers.GetOrderByCode)
-		api.POST("/orders", handlers.CreateOrder)
+		api.POST("/orders", middleware.ResolveCustomerOptional(), handlers.CreateOrder)
 		api.GET("/orders", handlers.GetOrders)
 		api.PATCH("/orders/:id/status", handlers.UpdateOrderStatus)
 		api.POST("/cards/scan", handlers.ScanCard)
 		api.GET("/agents/code/:code", handlers.GetAgentByCode)
 		api.GET("/agents/code/:code/history", handlers.GetAgentHistory)
+
+		// Customer auth (no SMS — phone-based registration)
+		api.POST("/customer/register", handlers.CustomerRegisterOrLogin)
+		api.POST("/customer/login", handlers.CustomerLogin)
+	}
+
+	// Customer-authenticated routes
+	customer := r.Group("/api/customer")
+	customer.Use(middleware.CustomerAuth())
+	{
+		customer.GET("/me", handlers.CustomerMe)
+		customer.PUT("/me", handlers.CustomerUpdateMe)
+		customer.GET("/orders", handlers.CustomerOrders)
+		customer.GET("/addresses", handlers.CustomerAddresses)
+		customer.POST("/addresses", handlers.CustomerAddAddress)
+		customer.DELETE("/addresses/:id", handlers.CustomerDeleteAddress)
 	}
 
 	// Admin routes (protected)

@@ -6,17 +6,36 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('eco_taomlar_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  // Customer scope routes always send the customer token.
+  // The cashier/admin app uses the admin token.
+  // POST /orders ham mijoz token'i bilan keladi (agar bor bo'lsa) — backend customer_id ni biriktiradi.
+  const isCustomerRoute = (config.url || '').startsWith('/customer/') ||
+                          (config.url || '') === '/customer/register' ||
+                          (config.url || '') === '/customer/login' ||
+                          (config.url || '') === '/orders'
+  if (isCustomerRoute) {
+    const ct = localStorage.getItem('eco_customer_token')
+    if (ct) config.headers.Authorization = `Bearer ${ct}`
+  } else {
+    const token = localStorage.getItem('eco_taomlar_token')
+    if (token) config.headers.Authorization = `Bearer ${token}`
+  }
   return config
 })
 
 api.interceptors.response.use(
   res => res,
   err => {
+    const url = err.config?.url || ''
+    const isCustomer = url.startsWith('/customer/')
     if (err.response?.status === 401) {
-      localStorage.removeItem('eco_taomlar_token')
-      window.location.href = '/admin'
+      if (isCustomer) {
+        localStorage.removeItem('eco_customer_token')
+        // Don't redirect — let the shop UI re-show registration screen
+      } else if (!url.startsWith('/orders') && !url.startsWith('/menu')) {
+        localStorage.removeItem('eco_taomlar_token')
+        window.location.href = '/admin'
+      }
     }
     return Promise.reject(err)
   }
@@ -72,6 +91,17 @@ export const inventoryAPI = {
 export const promoAPI = {
   getAll: () => api.get('/admin/promo'),
   update: (id, data) => api.put(`/admin/promo/${id}`, data),
+}
+
+export const customerAPI = {
+  register: (data) => api.post('/customer/register', data),
+  login: (data) => api.post('/customer/login', data),
+  me: () => api.get('/customer/me'),
+  updateMe: (data) => api.put('/customer/me', data),
+  orders: () => api.get('/customer/orders'),
+  addresses: () => api.get('/customer/addresses'),
+  addAddress: (data) => api.post('/customer/addresses', data),
+  deleteAddress: (id) => api.delete(`/customer/addresses/${id}`),
 }
 
 export const vipAPI = {

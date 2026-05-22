@@ -45,6 +45,28 @@ func CreateOrder(c *gin.Context) {
 		return
 	}
 
+	// If the caller is a signed-in customer (token resolved by ResolveCustomerOptional),
+	// attach the customer's id and prefer the stored phone/name when fields are blank.
+	var customerID int
+	if v, ok := c.Get("customer_id"); ok {
+		if cid, ok2 := v.(int); ok2 && cid > 0 {
+			customerID = cid
+			var first, last, phone string
+			database.DB.QueryRow(
+				`SELECT first_name, COALESCE(last_name,''), phone FROM customers WHERE id=$1`, cid,
+			).Scan(&first, &last, &phone)
+			if req.CustomerFirstName == "" {
+				req.CustomerFirstName = first
+			}
+			if req.CustomerLastName == "" {
+				req.CustomerLastName = last
+			}
+			if req.CustomerPhone == "" {
+				req.CustomerPhone = phone
+			}
+		}
+	}
+
 	tx, err := database.DB.Begin()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction error"})
@@ -132,15 +154,19 @@ func CreateOrder(c *gin.Context) {
 		if dtype == "" {
 			dtype = "pickup"
 		}
+		var custIDArg interface{}
+		if customerID > 0 {
+			custIDArg = customerID
+		}
 		insErr := tx.QueryRow(
 			`INSERT INTO orders
 			   (order_code, total_price, discount_amount, final_price, status, card_code, note,
 			    customer_first_name, customer_last_name, customer_phone,
-			    delivery_type, delivery_address, delivery_lat, delivery_lng)
-			 VALUES ($1,$2,0,$2,'rejected',$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+			    delivery_type, delivery_address, delivery_lat, delivery_lng, customer_id)
+			 VALUES ($1,$2,0,$2,'rejected',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
 			rejectedCode, totalPrice, req.CardCode, req.Note,
 			req.CustomerFirstName, req.CustomerLastName, req.CustomerPhone,
-			dtype, req.DeliveryAddress, req.DeliveryLat, req.DeliveryLng,
+			dtype, req.DeliveryAddress, req.DeliveryLat, req.DeliveryLng, custIDArg,
 		).Scan(&rejectedID)
 		if insErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": insErr.Error()})
@@ -202,15 +228,19 @@ func CreateOrder(c *gin.Context) {
 	if dtype == "" {
 		dtype = "pickup"
 	}
+	var custIDArg interface{}
+	if customerID > 0 {
+		custIDArg = customerID
+	}
 	err = tx.QueryRow(
 		`INSERT INTO orders
 		   (order_code, total_price, discount_amount, final_price, status, card_code, note,
 		    customer_first_name, customer_last_name, customer_phone,
-		    delivery_type, delivery_address, delivery_lat, delivery_lng)
-		 VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+		    delivery_type, delivery_address, delivery_lat, delivery_lng, customer_id)
+		 VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
 		orderCode, totalPrice, discountAmount, finalPrice, req.CardCode, req.Note,
 		req.CustomerFirstName, req.CustomerLastName, req.CustomerPhone,
-		dtype, req.DeliveryAddress, req.DeliveryLat, req.DeliveryLng,
+		dtype, req.DeliveryAddress, req.DeliveryLat, req.DeliveryLng, custIDArg,
 	).Scan(&orderID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
