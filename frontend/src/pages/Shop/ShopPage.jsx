@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { menuAPI, ordersAPI, customerAPI, promoAPI } from '../../api'
 import toast from 'react-hot-toast'
+import { Geolocation } from '@capacitor/geolocation'
+import { Capacitor } from '@capacitor/core'
 import {
   ShoppingCart, Plus, Minus, Trash2, X, Search,
   MapPin, Truck, Store, Phone, Check, Loader, ChevronLeft, ChevronRight,
@@ -202,16 +204,57 @@ export default function ShopPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promoInput, cart])
 
-  const maybeAskLocation = () => {
-    if (!navigator.geolocation) return
+  // Unified geolocation helper — uses Capacitor Geolocation plugin on native
+  // (Android/iOS), which triggers the system permission prompt the first time.
+  // Falls back to the browser Geolocation API on the web.
+  const getCurrentPositionUnified = useCallback(async (opts = {}) => {
+    const isNative = Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform()
+    if (isNative) {
+      // Ensure permission is granted (prompts the user the first time)
+      try {
+        const status = await Geolocation.checkPermissions()
+        if (status.location !== 'granted' && status.coarseLocation !== 'granted') {
+          const req = await Geolocation.requestPermissions({ permissions: ['location'] })
+          if (req.location !== 'granted' && req.coarseLocation !== 'granted') {
+            const err = new Error('denied'); err.code = 1; throw err
+          }
+        }
+      } catch (e) {
+        if (e && e.code === 1) throw e
+        // checkPermissions can fail on older OS — just try getCurrentPosition
+      }
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: opts.enableHighAccuracy ?? true,
+        timeout: opts.timeout ?? 10000,
+        maximumAge: opts.maximumAge ?? 0,
+      })
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude }
+    }
+    // Web fallback
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        const err = new Error('no_geo'); err.code = 2; reject(err); return
+      }
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        reject,
+        { enableHighAccuracy: opts.enableHighAccuracy ?? true,
+          timeout: opts.timeout ?? 10000,
+          maximumAge: opts.maximumAge ?? 0 }
+      )
+    })
+  }, [])
+
+  const maybeAskLocation = useCallback(async () => {
     if (localStorage.getItem('shop_location_asked') === '1') return
     localStorage.setItem('shop_location_asked', '1')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
-    )
-  }
+    try {
+      const c = await getCurrentPositionUnified({ enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 })
+      setCoords(c)
+    } catch {
+      // user may have denied — that's fine, we'll ask again at checkout if needed
+    }
+  }, [getCurrentPositionUnified])
 
   // Registration
   const doRegister = async () => {
@@ -262,22 +305,21 @@ export default function ShopPage() {
   const cartTotal = useMemo(() => cart.reduce((s, c) => s + c.price * c.qty, 0), [cart])
   const cartCount = useMemo(() => cart.reduce((s, c) => s + c.qty, 0), [cart])
 
-  // Geolocation
-  const getLocation = () => {
-    if (!navigator.geolocation) { toast.error(tr('browserNoGeo')); return }
+  // Geolocation — explicit user request (button tap). Uses native plugin on APK.
+  const getLocation = async () => {
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        toast.success('✓'); setLocating(false)
-      },
-      (err) => {
-        let msg = tr('locationFailed')
-        if (err.code === 1) msg = tr('locationDenied')
-        toast.error(msg); setLocating(false)
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    )
+    try {
+      const c = await getCurrentPositionUnified({ enableHighAccuracy: true, timeout: 12000 })
+      setCoords(c)
+      toast.success('✓')
+    } catch (err) {
+      let msg = tr('locationFailed')
+      if (err && err.code === 1) msg = tr('locationDenied')
+      else if (err && err.code === 2) msg = tr('browserNoGeo')
+      toast.error(msg)
+    } finally {
+      setLocating(false)
+    }
   }
 
   const saveAddress = async () => {
