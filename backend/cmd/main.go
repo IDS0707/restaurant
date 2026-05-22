@@ -101,9 +101,11 @@ func main() {
 		admin.GET("/agents/:id/bonuses", handlers.GetAgentBonuses)
 		admin.DELETE("/agents/:id", handlers.DeleteAgent)
 
-		// Promo QR discount
+		// Promo QR discount (multiple codes, optional expiry)
 		admin.GET("/promo", handlers.GetPromoDiscount)
+		admin.POST("/promo", handlers.CreatePromoDiscount)
 		admin.PUT("/promo/:id", handlers.UpdatePromoDiscount)
+		admin.DELETE("/promo/:id", handlers.DeletePromoDiscount)
 
 		// VIP cards
 		admin.GET("/vip", handlers.GetVipCards)

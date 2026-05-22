@@ -178,6 +178,8 @@ CREATE TABLE IF NOT EXISTS promo_discount (
     is_active       BOOLEAN DEFAULT true,
     usage_limit     INT DEFAULT 0,
     use_count       INT DEFAULT 0,
+    valid_until     TIMESTAMP NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

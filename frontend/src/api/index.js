@@ -90,7 +90,9 @@ export const inventoryAPI = {
 
 export const promoAPI = {
   getAll: () => api.get('/admin/promo'),
+  create: (data) => api.post('/admin/promo', data),
   update: (id, data) => api.put(`/admin/promo/${id}`, data),
+  delete: (id) => api.delete(`/admin/promo/${id}`),
 }
 
 export const customerAPI = {

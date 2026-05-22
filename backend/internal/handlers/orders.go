@@ -316,31 +316,36 @@ func applyCardDiscount(tx *sql.Tx, cardCode string, totalPrice float64) (float64
 			return totalPrice, 0, 0, nil // discount = totalPrice → final 0
 		}
 
-		// Try promo discount code (separate global QR managed in admin)
+		// Try promo discount code (separate global QR managed in admin) — case-insensitive
 		var promoID int
 		var promoDiscount float64
 		var promoType string
 		var promoActive bool
 		var promoLimit, promoUseCount int
+		var promoValidUntil *time.Time
 		promoErr := tx.QueryRow(
 			`SELECT id, discount_amount, COALESCE(discount_type,'amount'), is_active,
-			        COALESCE(usage_limit,0), COALESCE(use_count,0)
-			 FROM promo_discount WHERE code=$1`, cardCode,
-		).Scan(&promoID, &promoDiscount, &promoType, &promoActive, &promoLimit, &promoUseCount)
+			        COALESCE(usage_limit,0), COALESCE(use_count,0), valid_until
+			 FROM promo_discount WHERE UPPER(code)=UPPER($1)`, cardCode,
+		).Scan(&promoID, &promoDiscount, &promoType, &promoActive, &promoLimit, &promoUseCount, &promoValidUntil)
 		if promoErr != nil {
 			return 0, 0, 0, fmt.Errorf("card not found")
 		}
 		if !promoActive {
 			return 0, 0, 0, fmt.Errorf("Promo deaktivlashtirilgan")
 		}
+		if promoValidUntil != nil && time.Now().After(*promoValidUntil) {
+			return 0, 0, 0, fmt.Errorf("Promo muddati tugagan")
+		}
 		if promoLimit > 0 && promoUseCount >= promoLimit {
 			return 0, 0, 0, fmt.Errorf("Promo muddati tugagan")
 		}
-		// Atomic increment with limit guard
+		// Atomic increment with limit + validity guard
 		res, errInc := tx.Exec(
 			`UPDATE promo_discount SET use_count = use_count + 1
 			 WHERE id=$1 AND is_active=true
-			 AND (usage_limit = 0 OR use_count < usage_limit)`,
+			 AND (usage_limit = 0 OR use_count < usage_limit)
+			 AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)`,
 			promoID,
 		)
 		if errInc != nil {

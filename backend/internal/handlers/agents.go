@@ -247,20 +247,25 @@ func ScanCard(c *gin.Context) {
 			return
 		}
 
-		// Try as promo QR code
+		// Try as promo QR/typed code (case-insensitive on the code)
 		var promoDiscount float64
 		var promoType string
 		var promoActive bool
 		var promoLimit, promoUseCount int
+		var promoValidUntil *time.Time
 		promoErr := database.DB.QueryRow(
 			`SELECT discount_amount, COALESCE(discount_type,'amount'), is_active,
-			        COALESCE(usage_limit,0), COALESCE(use_count,0)
-			 FROM promo_discount WHERE code=$1`,
+			        COALESCE(usage_limit,0), COALESCE(use_count,0), valid_until
+			 FROM promo_discount WHERE UPPER(code)=UPPER($1)`,
 			body.CardCode,
-		).Scan(&promoDiscount, &promoType, &promoActive, &promoLimit, &promoUseCount)
+		).Scan(&promoDiscount, &promoType, &promoActive, &promoLimit, &promoUseCount, &promoValidUntil)
 		if promoErr == nil {
 			if !promoActive {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Promo deaktivlashtirilgan"})
+				return
+			}
+			if promoValidUntil != nil && time.Now().After(*promoValidUntil) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Promo muddati tugagan"})
 				return
 			}
 			if promoLimit > 0 && promoUseCount >= promoLimit {

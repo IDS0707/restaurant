@@ -201,14 +201,16 @@ type RecipeItemDetail struct {
 }
 
 type PromoDiscount struct {
-	ID             int       `json:"id"`
-	Code           string    `json:"code"`
-	DiscountAmount float64   `json:"discount_amount"`
-	DiscountType   string    `json:"discount_type"` // 'amount' | 'percent'
-	IsActive       bool      `json:"is_active"`
-	UsageLimit     int       `json:"usage_limit"`
-	UseCount       int       `json:"use_count"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             int        `json:"id"`
+	Code           string     `json:"code"`
+	DiscountAmount float64    `json:"discount_amount"`
+	DiscountType   string     `json:"discount_type"` // 'amount' | 'percent'
+	IsActive       bool       `json:"is_active"`
+	UsageLimit     int        `json:"usage_limit"`
+	UseCount       int        `json:"use_count"`
+	ValidUntil     *time.Time `json:"valid_until,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type Customer struct {

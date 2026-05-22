@@ -2,18 +2,42 @@ import React, { useState, useEffect, useRef } from 'react'
 import { promoAPI } from '../../api'
 import toast from 'react-hot-toast'
 import { QRCodeCanvas } from 'qrcode.react'
-import { Save, QrCode, Download, Printer, Loader, Check, X, RotateCcw, Infinity, Percent, DollarSign } from 'lucide-react'
+import {
+  Plus, QrCode, Download, Printer, Loader, Check, X, Trash2,
+  Percent, DollarSign, Calendar, Power, Infinity as InfinityIcon, RotateCcw,
+} from 'lucide-react'
 import '../Admin/AdminLayout.css'
 
+const fmtDate = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+const isExpired = (iso) => iso ? new Date(iso) < new Date() : false
+
 export default function AdminPromo() {
-  const [promo, setPromo] = useState(null)
+  const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+
+  // Create-form state
+  const [code, setCode] = useState('')
+  const [amount, setAmount] = useState('')
+  const [type, setType] = useState('amount')
+  const [validUntil, setValidUntil] = useState('')
+  const [usageLimit, setUsageLimit] = useState('')
+
+  // Detail / edit panel
+  const [selected, setSelected] = useState(null)
+  const [editAmount, setEditAmount] = useState('')
+  const [editType, setEditType] = useState('amount')
+  const [editActive, setEditActive] = useState(true)
+  const [editValidUntil, setEditValidUntil] = useState('')
+  const [editLimit, setEditLimit] = useState('')
   const [saving, setSaving] = useState(false)
-  const [discount, setDiscount] = useState('')
-  const [discountType, setDiscountType] = useState('amount') // 'amount' | 'percent'
-  const [isActive, setIsActive] = useState(true)
-  const [usageLimit, setUsageLimit] = useState('0')
-  const [unlimited, setUnlimited] = useState(true)
+
   const qrRef = useRef(null)
 
   useEffect(() => { load() }, [])
@@ -22,44 +46,85 @@ export default function AdminPromo() {
     setLoading(true)
     try {
       const r = await promoAPI.getAll()
-      if (r.data && r.data.length > 0) {
-        const p = r.data[0]
-        setPromo(p)
-        setDiscount(p.discount_amount)
-        setDiscountType(p.discount_type || 'amount')
-        setIsActive(p.is_active)
-        setUsageLimit(String(p.usage_limit || 0))
-        setUnlimited(!p.usage_limit || p.usage_limit === 0)
+      setList(r.data)
+      if (r.data.length > 0 && !selected) {
+        openDetail(r.data[0])
       }
+    } catch (e) { toast.error('Юкланмади') }
+    finally { setLoading(false) }
+  }
+
+  const openDetail = (p) => {
+    setSelected(p)
+    setEditAmount(p.discount_amount)
+    setEditType(p.discount_type || 'amount')
+    setEditActive(p.is_active)
+    setEditValidUntil(p.valid_until ? p.valid_until.slice(0, 16) : '')
+    setEditLimit(String(p.usage_limit || 0))
+  }
+
+  const create = async (e) => {
+    e?.preventDefault?.()
+    if (!code.trim()) { toast.error('Код киритинг'); return }
+    if (!amount || parseFloat(amount) <= 0) { toast.error('Чегирма миқдорини киритинг'); return }
+    setCreating(true)
+    try {
+      const payload = {
+        code: code.trim().toUpperCase(),
+        discount_amount: parseFloat(amount),
+        discount_type: type,
+        usage_limit: parseInt(usageLimit) || 0,
+        valid_until: validUntil || '',
+        is_active: true,
+      }
+      const r = await promoAPI.create(payload)
+      setList(p => [r.data, ...p])
+      setCode(''); setAmount(''); setValidUntil(''); setUsageLimit('')
+      setShowForm(false)
+      openDetail(r.data)
+      toast.success('Промо яратилди')
     } catch (e) {
-      toast.error('Юкланмади')
+      toast.error(e?.response?.data?.error || 'Хатолик')
     } finally {
-      setLoading(false)
+      setCreating(false)
     }
   }
 
   const save = async (opts = {}) => {
-    if (!promo) return
+    if (!selected) return
     setSaving(true)
     try {
-      const amount = parseFloat(discount) || 0
-      const limit = unlimited ? 0 : (parseInt(usageLimit) || 0)
-      const r = await promoAPI.update(promo.id, {
-        discount_amount: amount,
-        discount_type: discountType,
-        is_active: isActive,
-        usage_limit: limit,
+      const payload = {
+        discount_amount: parseFloat(editAmount) || 0,
+        discount_type: editType,
+        is_active: editActive,
+        usage_limit: parseInt(editLimit) || 0,
+        valid_until: editValidUntil || '',
         reset_count: !!opts.reset,
-      })
-      setPromo(r.data)
-      setDiscountType(r.data.discount_type || 'amount')
-      setUsageLimit(String(r.data.usage_limit || 0))
-      setUnlimited(!r.data.usage_limit)
-      toast.success(opts.reset ? 'Сақланди ва ҳисоб тикланди' : 'Сақланди')
+      }
+      const r = await promoAPI.update(selected.id, payload)
+      setList(p => p.map(x => x.id === r.data.id ? r.data : x))
+      setSelected(r.data)
+      toast.success(opts.reset ? 'Сақланди, ҳисоб тикланди' : 'Сақланди')
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Хатолик')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const remove = async (p) => {
+    if (!window.confirm(`«${p.code}» промосини ўчирасизми?`)) return
+    try {
+      await promoAPI.delete(p.id)
+      setList(prev => prev.filter(x => x.id !== p.id))
+      if (selected?.id === p.id) {
+        const next = list.find(x => x.id !== p.id)
+        if (next) openDetail(next); else setSelected(null)
+      }
+      toast.success(`«${p.code}» ўчирилди`)
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Хатолик')
     }
   }
 
@@ -69,325 +134,313 @@ export default function AdminPromo() {
     const url = canvas.toDataURL('image/png')
     const a = document.createElement('a')
     a.href = url
-    a.download = `promo-qr-${promo?.code || 'main'}.png`
+    a.download = `promo-${selected.code}.png`
     a.click()
   }
 
   const printQR = () => {
     const canvas = qrRef.current?.querySelector('canvas')
-    if (!canvas) return
+    if (!canvas || !selected) return
     const url = canvas.toDataURL('image/png')
     const w = window.open('', '_blank')
     if (!w) return
-    const isPercent = discountType === 'percent'
-    const valTxt = isPercent
-      ? `${parseFloat(discount || 0)}% chegirma`
-      : `${parseFloat(discount || 0).toLocaleString()} so'm chegirma`
-    const explain = isPercent
-      ? `QR kodni kassirga ko'rsating — buyurtmangizdan ${parseFloat(discount || 0)}% chegirma olasiz`
-      : `QR kodni kassirga ko'rsating — buyurtmangizdan ${parseFloat(discount || 0).toLocaleString()} so'm chegirma olasiz`
+    const valTxt = (selected.discount_type === 'percent')
+      ? `${Number(selected.discount_amount)}% chegirma`
+      : `${Number(selected.discount_amount).toLocaleString()} so'm chegirma`
     w.document.write(`
-      <html>
-        <head><title>Promo QR — ${promo?.code}</title>
-        <style>
-          body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; }
-          h1 { color: #FF6B35; margin: 8px 0; }
-          h2 { color: #15803D; font-size: 32px; margin: 4px 0 24px; }
-          img { width: 360px; height: 360px; }
-          .code { font-family: monospace; letter-spacing: 2px; font-size: 18px; color: #374151; margin-top: 12px; }
-          p { color: #6B7280; max-width: 420px; margin: 16px auto; }
-        </style>
-        </head>
-        <body>
-          <h1>ECO taomlar — Promo</h1>
-          <h2>${valTxt}</h2>
-          <img src="${url}" />
-          <div class="code">${promo?.code}</div>
-          <p>${explain}</p>
-          <script>window.onload = () => setTimeout(() => window.print(), 300)</script>
-        </body>
-      </html>
+      <html><head><title>Promo — ${selected.code}</title>
+      <style>body{font-family:system-ui,sans-serif;text-align:center;padding:40px}h1{color:#FF6B35;margin:8px 0}h2{color:#15803D;font-size:32px;margin:4px 0 24px}img{width:360px;height:360px}.code{font-family:monospace;letter-spacing:2px;font-size:22px;color:#374151;margin-top:12px;font-weight:700}p{color:#6B7280;max-width:420px;margin:16px auto}</style>
+      </head><body>
+        <h1>ECO taomlar — Promo</h1>
+        <h2>${valTxt}</h2>
+        <img src="${url}" />
+        <div class="code">${selected.code}</div>
+        <p>QR'ni skanerlang yoki «${selected.code}» kodini buyurtmada kiriting</p>
+        <script>window.onload=()=>setTimeout(()=>window.print(),300)</script>
+      </body></html>
     `)
     w.document.close()
   }
 
-  if (loading) {
-    return <div className="adm-loading"><div className="adm-spinner" /><span>Юкланмоқда...</span></div>
-  }
-
-  if (!promo) {
-    return (
-      <div className="adm-card" style={{ textAlign: 'center', padding: 40 }}>
-        <p>Промо топилмади. Серверда миграцияни ишга туширинг.</p>
-      </div>
-    )
-  }
-
-  const amountChanged = parseFloat(discount) !== Number(promo.discount_amount)
-  const typeChanged = discountType !== (promo.discount_type || 'amount')
-  const activeChanged = isActive !== promo.is_active
-  const limitChanged = (unlimited ? 0 : parseInt(usageLimit) || 0) !== (promo.usage_limit || 0)
-  const dirty = amountChanged || typeChanged || activeChanged || limitChanged
-
-  const usedUp = promo.usage_limit > 0 && promo.use_count >= promo.usage_limit
-  const remaining = promo.usage_limit > 0 ? Math.max(0, promo.usage_limit - promo.use_count) : null
+  const expired = selected && isExpired(selected.valid_until)
+  const usedUp = selected && selected.usage_limit > 0 && selected.use_count >= selected.usage_limit
+  const stoppedReason = !selected ? '' : (!selected.is_active ? 'Деактив' : expired ? 'Муддат тугаган' : usedUp ? 'Лимит тугаган' : '')
 
   return (
     <div>
-      <div className="adm-page-header" style={{ marginBottom: 24 }}>
-        <h1>🎟️ Промо QR</h1>
-        <p>Битта махсус QR код — кассирга кўрсатилганда автоматик чегирма беради. Сумма ўзгариши мумкин.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div className="adm-page-header" style={{ margin: 0 }}>
+          <h1>🎟️ Промокодлар</h1>
+          <p>Вақтинчалик промокодлар — миқдор/фоиз, муддат, ишлатиш чегараси</p>
+        </div>
+        <button className="adm-btn adm-btn-primary" onClick={() => setShowForm(true)}>
+          <Plus size={16} /> Янги промо
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 1100 }}>
-
-        {/* LEFT: QR Code */}
-        <div className="adm-card" style={{ textAlign: 'center' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 16 }}>
-            <QrCode size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-            Промо QR
-          </h3>
-
-          <div ref={qrRef} style={{
-            display: 'inline-block', padding: 16, background: 'white',
-            borderRadius: 16, border: '2px solid #F3F4F6', marginBottom: 16,
-          }}>
-            <QRCodeCanvas
-              value={promo.code}
-              size={280}
-              level="H"
-              includeMargin={false}
-              fgColor="#111827"
-            />
-          </div>
-
-          <div style={{
-            fontFamily: 'monospace', fontSize: 16, letterSpacing: 2, color: '#374151',
-            background: '#F9FAFB', padding: '8px 16px', borderRadius: 8, display: 'inline-block',
-          }}>
-            {promo.code}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
-            <button className="adm-btn adm-btn-secondary adm-btn-sm" onClick={downloadQR}>
-              <Download size={14} /> Юклаб олиш
-            </button>
-            <button className="adm-btn adm-btn-secondary adm-btn-sm" onClick={printQR}>
-              <Printer size={14} /> Чоп этиш
-            </button>
-          </div>
-
-          <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 14, lineHeight: 1.5 }}>
-            QR'ни принтерда чоп этинг ва столга қўйинг. Мижоз QR'ни кассирга кўрсатганда —<br />
-            кассир скаенерлайди ва чегирма автоматик қўлланилади.
-          </p>
-        </div>
-
-        {/* RIGHT: Settings */}
-        <div className="adm-card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 16 }}>⚙️ Созламалар</h3>
-
-          {/* Discount type toggle */}
-          <div className="adm-field">
-            <label className="adm-label">Чегирма тури</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setDiscountType('amount')}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, alignItems: 'start' }}>
+        {/* LEFT LIST */}
+        <div className="adm-card" style={{ padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'hidden auto' }}>
+          {loading ? (
+            <div className="adm-loading"><div className="adm-spinner" /></div>
+          ) : list.length === 0 ? (
+            <div className="adm-empty">Промокод йўқ</div>
+          ) : list.map(p => {
+            const expr = isExpired(p.valid_until)
+            const up = p.usage_limit > 0 && p.use_count >= p.usage_limit
+            const bad = !p.is_active || expr || up
+            return (
+              <div
+                key={p.id}
+                onClick={() => openDetail(p)}
                 style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  border: discountType === 'amount' ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
-                  background: discountType === 'amount' ? '#FFF4EF' : 'white',
-                  color: discountType === 'amount' ? '#FF6B35' : '#6B7280',
+                  padding: '12px 14px', cursor: 'pointer',
+                  borderBottom: '1px solid #F3F4F6',
+                  background: selected?.id === p.id ? '#FFF4EF' : 'white',
+                  opacity: bad ? 0.6 : 1,
                 }}
               >
-                <DollarSign size={14} /> Сумма (сум)
-              </button>
-              <button
-                type="button"
-                onClick={() => setDiscountType('percent')}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  border: discountType === 'percent' ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
-                  background: discountType === 'percent' ? '#FFF4EF' : 'white',
-                  color: discountType === 'percent' ? '#FF6B35' : '#6B7280',
-                }}
-              >
-                <Percent size={14} /> Фоиз (%)
-              </button>
-            </div>
-          </div>
-
-          <div className="adm-field">
-            <label className="adm-label">
-              {discountType === 'percent' ? 'Чегирма фоизи (%)' : 'Чегирма миқдори (сум)'} *
-            </label>
-            <input
-              className="adm-input"
-              type="number"
-              step={discountType === 'percent' ? '1' : '1000'}
-              min="0"
-              max={discountType === 'percent' ? '100' : undefined}
-              value={discount}
-              onChange={e => setDiscount(e.target.value)}
-              placeholder={discountType === 'percent' ? 'Масалан: 10' : 'Масалан: 15000'}
-              style={{ fontSize: 24, fontWeight: 800, color: '#15803D', textAlign: 'center', padding: '14px 16px' }}
-            />
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
-              Ҳозирги қиймат:&nbsp;
-              <b>
-                {Number(promo.discount_amount).toLocaleString()}
-                {(promo.discount_type || 'amount') === 'percent' ? '%' : ' сум'}
-              </b>
-            </div>
-          </div>
-
-          {/* Usage limit */}
-          <div className="adm-field">
-            <label className="adm-label">Амал қилиш муддати (неча марта)</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <button
-                type="button"
-                onClick={() => setUnlimited(true)}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  border: unlimited ? '1.5px solid #2563EB' : '1.5px solid #E5E7EB',
-                  background: unlimited ? '#EFF6FF' : 'white',
-                  color: unlimited ? '#1E40AF' : '#6B7280',
-                }}
-              >
-                <Infinity size={14} /> Чексиз
-              </button>
-              <button
-                type="button"
-                onClick={() => setUnlimited(false)}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  border: !unlimited ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
-                  background: !unlimited ? '#FFF4EF' : 'white',
-                  color: !unlimited ? '#FF6B35' : '#6B7280',
-                }}
-              >
-                Чекланган
-              </button>
-            </div>
-            {!unlimited && (
-              <input
-                className="adm-input"
-                type="number"
-                min="1"
-                value={usageLimit}
-                onChange={e => setUsageLimit(e.target.value)}
-                placeholder="Масалан: 5"
-              />
-            )}
-            <div style={{
-              marginTop: 8, padding: '10px 12px', borderRadius: 8,
-              background: usedUp ? '#FEF2F2' : (promo.usage_limit > 0 ? '#F0FDF4' : '#F9FAFB'),
-              border: `1px solid ${usedUp ? '#FECACA' : (promo.usage_limit > 0 ? '#BBF7D0' : '#F3F4F6')}`,
-              fontSize: 13,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#6B7280' }}>Ҳозиргача ишлатилди:</span>
-                <span style={{ fontWeight: 700, color: usedUp ? '#B91C1C' : '#15803D' }}>
-                  {promo.use_count}
-                  {promo.usage_limit > 0 && ` / ${promo.usage_limit}`}
-                </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#111827', fontSize: 14, letterSpacing: 1 }}>
+                    {p.code}
+                  </div>
+                  {bad && (
+                    <span style={{ fontSize: 10, background: '#FEE2E2', color: '#B91C1C', padding: '2px 7px', borderRadius: 100, fontWeight: 700 }}>
+                      ⏸
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: '#FF6B35', fontWeight: 700 }}>
+                  {p.discount_type === 'percent' ? `${Number(p.discount_amount)}%` : `${Number(p.discount_amount).toLocaleString()} сум`}
+                </div>
+                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                  {p.valid_until ? `📅 ${fmtDate(p.valid_until)}` : '∞ Муддатсиз'}
+                  {p.usage_limit > 0 && ` · ${p.use_count}/${p.usage_limit}`}
+                </div>
               </div>
-              {usedUp && (
-                <div style={{ marginTop: 6, color: '#B91C1C', fontWeight: 600, fontSize: 12 }}>
-                  ⛔ Муддат тугаган — кассирга чегирма қўлланилмайди
+            )
+          })}
+        </div>
+
+        {/* RIGHT DETAIL */}
+        <div>
+          {!selected ? (
+            <div className="adm-card" style={{ textAlign: 'center', padding: 40, color: '#9CA3AF' }}>
+              <QrCode size={48} opacity={0.3} />
+              <p>Чапдан промокод танланг ёки «Янги промо» билан яратинг</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {/* QR card */}
+              <div className="adm-card" style={{ textAlign: 'center' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>
+                  <QrCode size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                  QR код
+                </h3>
+                <div ref={qrRef} style={{ display: 'inline-block', padding: 14, background: 'white', borderRadius: 14, border: '2px solid #F3F4F6', marginBottom: 12 }}>
+                  <QRCodeCanvas value={selected.code} size={220} level="H" fgColor="#111827" />
                 </div>
-              )}
-              {promo.usage_limit > 0 && !usedUp && (
-                <div style={{ marginTop: 4, fontSize: 12, color: '#166534' }}>
-                  Қолди: <b>{remaining}</b> марта
+                <div style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 700, letterSpacing: 2, color: '#374151', marginBottom: 12 }}>
+                  {selected.code}
                 </div>
-              )}
-            </div>
-            {promo.use_count > 0 && (
-              <button
-                type="button"
-                onClick={() => save({ reset: true })}
-                disabled={saving}
-                style={{
-                  marginTop: 8, width: '100%', padding: '8px 10px', borderRadius: 8,
-                  border: '1.5px solid #DBEAFE', background: '#EFF6FF', color: '#1E40AF',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  gap: 6, fontSize: 12, fontWeight: 600, fontFamily: 'Inter, sans-serif',
-                }}>
-                <RotateCcw size={12} /> Ҳисобни тиклаш (0 га қайтариш)
-              </button>
-            )}
-          </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button className="adm-btn adm-btn-secondary adm-btn-sm" onClick={downloadQR}>
+                    <Download size={13} /> Юклаб
+                  </button>
+                  <button className="adm-btn adm-btn-secondary adm-btn-sm" onClick={printQR}>
+                    <Printer size={13} /> Чоп
+                  </button>
+                  <button
+                    className="adm-btn adm-btn-sm"
+                    onClick={() => remove(selected)}
+                    style={{ background: '#FEF2F2', color: '#B91C1C', border: '1.5px solid #FEE2E2' }}
+                  >
+                    <Trash2 size={13} /> Ўчириш
+                  </button>
+                </div>
+                {stoppedReason && (
+                  <div style={{ marginTop: 14, padding: '10px 12px', background: '#FEF2F2', borderRadius: 9, color: '#B91C1C', fontSize: 12, fontWeight: 600 }}>
+                    ⛔ {stoppedReason}
+                  </div>
+                )}
+              </div>
 
-          <div className="adm-field">
-            <label className="adm-label">Ҳолат</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setIsActive(true)}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  border: isActive ? '1.5px solid #10B981' : '1.5px solid #E5E7EB',
-                  background: isActive ? '#F0FDF4' : 'white',
-                  color: isActive ? '#15803D' : '#6B7280',
-                }}
-              >
-                <Check size={14} /> Актив
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsActive(false)}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  border: !isActive ? '1.5px solid #EF4444' : '1.5px solid #E5E7EB',
-                  background: !isActive ? '#FEF2F2' : 'white',
-                  color: !isActive ? '#B91C1C' : '#6B7280',
-                }}
-              >
-                <X size={14} /> Деактив
-              </button>
-            </div>
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
-              Деактив ҳолатда QR ишламайди, кассирга «Промо деактивлашган» дейилади.
-            </div>
-          </div>
+              {/* Settings card */}
+              <div className="adm-card">
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>⚙️ Созламалар</h3>
 
-          <button
-            className="adm-btn adm-btn-primary"
-            onClick={() => save()}
-            disabled={saving || !dirty}
-            style={{ width: '100%', justifyContent: 'center', marginTop: 8, padding: '12px' }}
-          >
-            {saving
-              ? <><Loader size={16} style={{ animation: 'adm-spin 0.7s linear infinite' }} /> Сақланмоқда...</>
-              : <><Save size={16} /> Сақлаш</>}
-          </button>
+                <div className="adm-field">
+                  <label className="adm-label">Чегирма тури</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setEditType('amount')} style={typeBtn(editType === 'amount')}>
+                      <DollarSign size={13} /> Сумма
+                    </button>
+                    <button type="button" onClick={() => setEditType('percent')} style={typeBtn(editType === 'percent')}>
+                      <Percent size={13} /> Фоиз
+                    </button>
+                  </div>
+                </div>
 
-          <div style={{ marginTop: 20, padding: '14px 16px', background: '#FFF7ED', borderRadius: 10, border: '1px solid #FED7AA' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#9A3412', marginBottom: 6 }}>📌 Қандай ишлайди</div>
-            <ol style={{ fontSize: 12, color: '#7C2D12', margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-              <li>Бу QR'ни чоп этинг ёки экранда кўрсатинг</li>
-              <li>Мижоз буюртма бераётганда уни кассирга кўрсатсин</li>
-              <li>Кассир «QR camera» тугмасини босиб скаенерлайди</li>
-              <li>Тизим <b>{Number(promo.discount_amount).toLocaleString()} сум</b> чегирмани автомат қўллайди</li>
-              <li>Чегирмани шу ердан ўзгартирасиз — QR'нинг ўзи ўзгармайди</li>
-            </ol>
-          </div>
+                <div className="adm-field">
+                  <label className="adm-label">
+                    {editType === 'percent' ? 'Фоиз (%)' : 'Сумма (сум)'} *
+                  </label>
+                  <input
+                    className="adm-input" type="number"
+                    step={editType === 'percent' ? '1' : '1000'}
+                    min="0" max={editType === 'percent' ? '100' : undefined}
+                    value={editAmount} onChange={e => setEditAmount(e.target.value)}
+                  />
+                </div>
+
+                <div className="adm-field">
+                  <label className="adm-label"><Calendar size={12} style={{ display: 'inline', marginRight: 4 }} /> Амал қилиш муддати</label>
+                  <input
+                    className="adm-input" type="datetime-local"
+                    value={editValidUntil}
+                    onChange={e => setEditValidUntil(e.target.value)}
+                  />
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+                    Бўш қолдирсангиз — муддатсиз
+                  </div>
+                </div>
+
+                <div className="adm-field">
+                  <label className="adm-label">Ишлатиш чегараси (0 = чексиз)</label>
+                  <input
+                    className="adm-input" type="number" min="0"
+                    value={editLimit} onChange={e => setEditLimit(e.target.value)}
+                  />
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+                    Ишлатилди: <b>{selected.use_count}</b>{selected.usage_limit > 0 ? ` / ${selected.usage_limit}` : ''}
+                  </div>
+                </div>
+
+                <div className="adm-field">
+                  <label className="adm-label">Ҳолат</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setEditActive(true)} style={statusBtn(editActive, 'on')}>
+                      <Power size={13} /> Актив
+                    </button>
+                    <button type="button" onClick={() => setEditActive(false)} style={statusBtn(!editActive, 'off')}>
+                      <X size={13} /> Деактив
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  className="adm-btn adm-btn-primary"
+                  onClick={() => save()}
+                  disabled={saving}
+                  style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+                >
+                  {saving ? <><Loader size={14} className="adm-spin" /> Сақланмоқда...</> : <><Check size={14} /> Сақлаш</>}
+                </button>
+                {selected.use_count > 0 && (
+                  <button
+                    onClick={() => save({ reset: true })}
+                    disabled={saving}
+                    style={{
+                      width: '100%', marginTop: 8, padding: 8, borderRadius: 8,
+                      border: '1.5px solid #DBEAFE', background: '#EFF6FF', color: '#1E40AF',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      gap: 4, fontSize: 12, fontWeight: 600, fontFamily: 'Inter, sans-serif',
+                    }}
+                  >
+                    <RotateCcw size={12} /> Ҳисобни тиклаш
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* CREATE MODAL */}
+      {showForm && (
+        <div className="adm-overlay" onClick={e => e.target === e.currentTarget && setShowForm(false)}>
+          <div className="adm-modal" style={{ maxWidth: 460 }}>
+            <div className="adm-modal-header">
+              <h2>Янги промокод</h2>
+              <button onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={create}>
+              <div className="adm-form-row">
+                <div className="adm-field">
+                  <label className="adm-label">Код *</label>
+                  <input
+                    className="adm-input"
+                    value={code}
+                    onChange={e => setCode(e.target.value.toUpperCase())}
+                    placeholder="Масалан: SUMMER10"
+                    style={{ fontFamily: 'monospace', letterSpacing: 1, fontWeight: 700 }}
+                    autoFocus required
+                  />
+                </div>
+                <div className="adm-field">
+                  <label className="adm-label">Тури</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setType('amount')} style={typeBtn(type === 'amount')}>
+                      <DollarSign size={13} /> Сумма
+                    </button>
+                    <button type="button" onClick={() => setType('percent')} style={typeBtn(type === 'percent')}>
+                      <Percent size={13} /> Фоиз
+                    </button>
+                  </div>
+                </div>
+                <div className="adm-field">
+                  <label className="adm-label">{type === 'percent' ? 'Фоиз (%)' : 'Сумма (сум)'} *</label>
+                  <input
+                    className="adm-input" type="number"
+                    step={type === 'percent' ? '1' : '1000'} min="0"
+                    max={type === 'percent' ? '100' : undefined}
+                    value={amount} onChange={e => setAmount(e.target.value)}
+                    placeholder={type === 'percent' ? '10' : '15000'} required
+                  />
+                </div>
+                <div className="adm-field">
+                  <label className="adm-label"><Calendar size={12} style={{ display: 'inline', marginRight: 4 }} /> Муддати</label>
+                  <input
+                    className="adm-input" type="datetime-local"
+                    value={validUntil} onChange={e => setValidUntil(e.target.value)}
+                  />
+                </div>
+                <div className="adm-field">
+                  <label className="adm-label">Ишлатиш чегараси (0 = чексиз)</label>
+                  <input
+                    className="adm-input" type="number" min="0"
+                    value={usageLimit} onChange={e => setUsageLimit(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="adm-modal-footer">
+                <button type="button" className="adm-btn adm-btn-secondary" onClick={() => setShowForm(false)}>Бекор</button>
+                <button type="submit" className="adm-btn adm-btn-primary" disabled={creating}>
+                  {creating ? <><Loader size={14} className="adm-spin" /> Яратилмоқда...</> : <><Check size={14} /> Яратиш</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const typeBtn = (active) => ({
+  flex: 1, padding: '10px 12px', borderRadius: 9, cursor: 'pointer',
+  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+  border: active ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
+  background: active ? '#FFF4EF' : 'white',
+  color: active ? '#FF6B35' : '#6B7280',
+})
+const statusBtn = (active, kind) => ({
+  flex: 1, padding: '10px 12px', borderRadius: 9, cursor: 'pointer',
+  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+  border: active ? (kind === 'on' ? '1.5px solid #10B981' : '1.5px solid #EF4444') : '1.5px solid #E5E7EB',
+  background: active ? (kind === 'on' ? '#F0FDF4' : '#FEF2F2') : 'white',
+  color: active ? (kind === 'on' ? '#15803D' : '#B91C1C') : '#6B7280',
+})

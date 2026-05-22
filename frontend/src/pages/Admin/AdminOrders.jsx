@@ -9,6 +9,7 @@ const STATUS = {
   cooking:  { label: 'Тайёрланмоқда', cls: 'adm-badge-orange' },
   ready:    { label: 'Тайёр',          cls: 'adm-badge-green'  },
   served:   { label: 'Берилди',        cls: 'adm-badge-gray'   },
+  rejected: { label: 'Бекор',          cls: 'adm-badge-red'    },
 }
 
 const DATE_FILTERS = [
@@ -66,6 +67,7 @@ export default function AdminOrders() {
     { val: 'cooking', label: 'Тайёрланмоқда' },
     { val: 'ready', label: 'Тайёр' },
     { val: 'served', label: 'Берилди' },
+    { val: 'rejected', label: 'Бекор' },
   ]
 
   const visibleOrders = orders.filter(o => inDateRange(o.created_at, dateFilter, customDate))
