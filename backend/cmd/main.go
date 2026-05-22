@@ -59,6 +59,7 @@ func main() {
 		customer.GET("/addresses", handlers.CustomerAddresses)
 		customer.POST("/addresses", handlers.CustomerAddAddress)
 		customer.DELETE("/addresses/:id", handlers.CustomerDeleteAddress)
+		customer.POST("/orders/:code/cancel", handlers.CustomerCancelOrder)
 	}
 
 	// Admin routes (protected)

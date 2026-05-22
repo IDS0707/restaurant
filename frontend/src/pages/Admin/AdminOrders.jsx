@@ -8,8 +8,15 @@ const STATUS = {
   pending:  { label: 'Кутилмоқда',    cls: 'adm-badge-yellow' },
   cooking:  { label: 'Тайёрланмоқда', cls: 'adm-badge-orange' },
   ready:    { label: 'Тайёр',          cls: 'adm-badge-green'  },
+  on_way:   { label: 'Йўлда',          cls: 'adm-badge-orange' },
   served:   { label: 'Берилди',        cls: 'adm-badge-gray'   },
   rejected: { label: 'Бекор',          cls: 'adm-badge-red'    },
+}
+
+// What action the dispatcher can take to advance an order's status
+const NEXT_ACTION = {
+  ready:  { next: 'on_way', label: 'Йўлга чиқди' },
+  on_way: { next: 'served', label: 'Берилди' },
 }
 
 const DATE_FILTERS = [
@@ -66,9 +73,20 @@ export default function AdminOrders() {
     { val: 'pending', label: 'Кутилмоқда' },
     { val: 'cooking', label: 'Тайёрланмоқда' },
     { val: 'ready', label: 'Тайёр' },
+    { val: 'on_way', label: 'Йўлда' },
     { val: 'served', label: 'Берилди' },
     { val: 'rejected', label: 'Бекор' },
   ]
+
+  const advance = async (order) => {
+    const action = NEXT_ACTION[order.status]
+    if (!action) return
+    try {
+      await ordersAPI.updateStatus(order.id, action.next)
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: action.next } : o))
+      toast.success(`#${order.order_code}: ${action.label}`)
+    } catch { toast.error('Хато') }
+  }
 
   const visibleOrders = orders.filter(o => inDateRange(o.created_at, dateFilter, customDate))
 
@@ -198,9 +216,22 @@ export default function AdminOrders() {
                   <td style={{ fontWeight: 700 }}>{o.final_price?.toLocaleString()} сум</td>
                   <td style={{ color: '#6B7280', fontSize: 13 }}>{o.card_code || '—'}</td>
                   <td>
-                    <span className={`adm-badge ${STATUS[o.status]?.cls || 'adm-badge-gray'}`}>
-                      {STATUS[o.status]?.label || o.status}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                      <span className={`adm-badge ${STATUS[o.status]?.cls || 'adm-badge-gray'}`}>
+                        {STATUS[o.status]?.label || o.status}
+                      </span>
+                      {NEXT_ACTION[o.status] && (
+                        <button
+                          onClick={() => advance(o)}
+                          style={{
+                            padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+                            border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                            background: '#FF6B35', color: 'white',
+                          }}>
+                          ➜ {NEXT_ACTION[o.status].label}
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td style={{ fontSize: 12, color: '#6B7280', whiteSpace: 'nowrap' }}>{fmtDate(o.created_at)}</td>
                 </tr>

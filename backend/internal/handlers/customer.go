@@ -290,3 +290,55 @@ func CustomerDeleteAddress(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted"})
 }
+
+// POST /api/customer/orders/:code/cancel
+// Customer cancels their own order. Only allowed while status is pending or cooking.
+// Optionally accepts a reason note that is appended to the order's note field.
+func CustomerCancelOrder(c *gin.Context) {
+	cid, _ := c.Get("customer_id")
+	customerID, _ := cid.(int)
+	orderCode := c.Param("code")
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	c.ShouldBindJSON(&body) // optional
+
+	var orderID int
+	var status string
+	err := database.DB.QueryRow(
+		`SELECT id, status FROM orders WHERE order_code=$1 AND customer_id=$2`,
+		orderCode, customerID,
+	).Scan(&orderID, &status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Buyurtma topilmadi"})
+		return
+	}
+	if status != "pending" && status != "cooking" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bu buyurtmani endi bekor qilib bo'lmaydi"})
+		return
+	}
+
+	reason := strings.TrimSpace(body.Reason)
+	if reason == "" {
+		reason = "Mijoz tomonidan bekor qilindi"
+	}
+
+	_, err = database.DB.Exec(
+		`UPDATE orders SET status='rejected',
+		                   note = CASE WHEN COALESCE(note,'')='' THEN $1
+		                               ELSE note || ' | ' || $1 END,
+		                   updated_at=CURRENT_TIMESTAMP
+		 WHERE id=$2`,
+		"❌ " + reason, orderID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Notify staff via WebSocket
+	o := models.Order{ID: orderID, OrderCode: orderCode, Status: "rejected"}
+	BroadcastMessage("order_status_changed", o)
+	c.JSON(http.StatusOK, gin.H{"message": "Bekor qilindi"})
+}

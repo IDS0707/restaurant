@@ -535,7 +535,7 @@ func UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 
-	validStatuses := map[string]bool{"pending": true, "cooking": true, "ready": true, "served": true}
+	validStatuses := map[string]bool{"pending": true, "cooking": true, "ready": true, "on_way": true, "served": true, "rejected": true}
 	if !validStatuses[body.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status"})
 		return

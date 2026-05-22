@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { menuAPI, ordersAPI, customerAPI, promoAPI } from '../../api'
 import toast from 'react-hot-toast'
 import {
   ShoppingCart, Plus, Minus, Trash2, X, Search,
-  MapPin, Truck, Store, Phone, User, Check, Loader, ChevronLeft, ChevronRight,
-  Home as HomeIcon, ClipboardList, UserCircle, LogOut, Edit3,
-  ShoppingBag, ChefHat, Bike, PackageCheck, Globe2, HelpCircle, Info, Sparkles,
+  MapPin, Truck, Store, Phone, Check, Loader, ChevronLeft, ChevronRight,
+  Home as HomeIcon, ClipboardList, UserCircle, LogOut,
+  ShoppingBag, ChefHat, Package, Bike, PackageCheck,
+  Globe2, Info, Sparkles, AlertTriangle, Star,
 } from 'lucide-react'
 import './ShopPage.css'
 import { t, getLang, setLang, LANGS, CATEGORY_META, categoryMeta } from './shopI18n'
@@ -23,33 +24,36 @@ const fmtJoin = (iso) => {
   return `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
 }
 
-const ACTIVE_STATUSES = ['pending', 'cooking', 'ready']
-const STATUS_STEPS = ['pending', 'cooking', 'ready', 'served']
-const STATUS_INDEX = { pending: 0, cooking: 1, ready: 2, served: 3 }
+const ACTIVE_STATUSES = ['pending', 'cooking', 'ready', 'on_way']
+const STATUS_STEPS = ['pending', 'cooking', 'ready', 'on_way', 'served']
+const STATUS_INDEX = { pending: 0, cooking: 1, ready: 2, on_way: 3, served: 4 }
+const CANCELLABLE = ['pending', 'cooking']
 
-const statusColor = (st) => ({
-  pending: { color: '#F59E0B', bg: '#FEF3C7' },
-  cooking: { color: '#FF6B35', bg: '#FFE4D6' },
-  ready: { color: '#0EA5E9', bg: '#E0F2FE' },
-  served: { color: '#10B981', bg: '#D1FAE5' },
-  rejected: { color: '#EF4444', bg: '#FEE2E2' },
-}[st] || { color: '#6B7280', bg: '#F3F4F6' })
+const STATUS_THEME = {
+  pending:  { color: '#9A3412', bg: '#FFEDD5', dot: '#FB923C' },
+  cooking:  { color: '#9A3412', bg: '#FED7AA', dot: '#FF6B35' },
+  ready:    { color: '#1E40AF', bg: '#DBEAFE', dot: '#3B82F6' },
+  on_way:   { color: '#5B21B6', bg: '#EDE9FE', dot: '#8B5CF6' },
+  served:   { color: '#065F46', bg: '#D1FAE5', dot: '#10B981' },
+  rejected: { color: '#991B1B', bg: '#FEE2E2', dot: '#EF4444' },
+}
 
 const statusKey = (st) => ({
   pending: 'statusPending',
   cooking: 'statusCooking',
   ready: 'statusReady',
+  on_way: 'statusOnWay',
   served: 'statusServed',
   rejected: 'statusRejected',
 }[st] || 'statusPending')
 
-const STEP_ICONS = [ShoppingBag, ChefHat, Bike, PackageCheck]
-const STEP_KEYS = ['stepPending', 'stepCooking', 'stepReady', 'stepServed']
+const STEP_ICONS = [ShoppingBag, ChefHat, Package, Bike, PackageCheck]
+const STEP_KEYS = ['stepPending', 'stepCooking', 'stepReady', 'stepOnWay', 'stepServed']
 
 export default function ShopPage() {
   // Language
   const [lang, setLangState] = useState(getLang())
-  const tr = (k) => t(k, lang)
+  const tr = useCallback((k) => t(k, lang), [lang])
   const changeLang = (code) => { setLang(code); setLangState(code) }
 
   // Auth state
@@ -86,12 +90,17 @@ export default function ShopPage() {
   const [addrLabel, setAddrLabel] = useState('Uy')
   const [note, setNote] = useState('')
   const [promoInput, setPromoInput] = useState('')
-  const [promoCheck, setPromoCheck] = useState(null) // {valid, discount_value, final_price, label, error?}
+  const [promoCheck, setPromoCheck] = useState(null)
   const [promoChecking, setPromoChecking] = useState(false)
   const promoDebounceRef = useRef(null)
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState('')
   const [imgErrors, setImgErrors] = useState({})
+
+  // Cancel modal
+  const [cancelOrderCode, setCancelOrderCode] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => { localStorage.setItem('shop_cart', JSON.stringify(cart)) }, [cart])
 
@@ -111,84 +120,92 @@ export default function ShopPage() {
     })()
   }, [])
 
+  // Load menu once — even unauthenticated user can browse
   useEffect(() => { loadMenu() }, [])
-  const loadMenu = async () => {
+
+  const loadMenu = useCallback(async () => {
     setLoadingMenu(true)
     try {
+      // serve stale cache first for instant render, then refresh
+      const cached = localStorage.getItem('shop_menu_cache')
+      if (cached) {
+        try {
+          const items = JSON.parse(cached)
+          if (Array.isArray(items) && items.length) {
+            setMenu(items)
+            setLoadingMenu(false)
+          }
+        } catch {}
+      }
       const r = await menuAPI.getAll()
-      setMenu(r.data.filter(m => m.available))
-    } catch { toast.error("Menyu yuklanmadi") }
-    finally { setLoadingMenu(false) }
-  }
-
-  useEffect(() => {
-    if (customer) {
-      loadOrders()
-      loadAddresses()
-      // Ask for location once after login (if not granted yet)
-      maybeAskLocation()
+      const items = (r.data || []).filter(m => m.available)
+      setMenu(items)
+      localStorage.setItem('shop_menu_cache', JSON.stringify(items))
+    } catch {
+      // keep cached menu silently
+    } finally {
+      setLoadingMenu(false)
     }
+  }, [])
+
+  // Load customer-specific data in parallel after login
+  useEffect(() => {
+    if (!customer) return
+    Promise.all([loadOrders(true), loadAddresses()])
+    maybeAskLocation()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer])
 
-  // Auto-refresh orders every 5s while there's an active order (real-time status)
+  // Auto-refresh orders every 5s while there's an active one (real-time)
   useEffect(() => {
     if (!customer) return
     const hasActive = orders.some(o => ACTIVE_STATUSES.includes(o.status))
     if (!hasActive) return
-    const id = setInterval(loadOrders, 5000)
+    const id = setInterval(() => loadOrders(false), 5000)
     return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, orders])
 
-  const loadOrders = async () => {
-    setLoadingOrders(true)
+  const loadOrders = async (showLoader = true) => {
+    if (showLoader) setLoadingOrders(true)
     try {
       const r = await customerAPI.orders()
-      setOrders(r.data)
-    } catch {}
-    finally { setLoadingOrders(false) }
+      setOrders(r.data || [])
+    } catch {} finally { if (showLoader) setLoadingOrders(false) }
   }
 
   const loadAddresses = async () => {
     try {
       const r = await customerAPI.addresses()
-      setAddresses(r.data)
-      const def = r.data.find(a => a.is_default) || r.data[0]
+      setAddresses(r.data || [])
+      const def = (r.data || []).find(a => a.is_default) || (r.data || [])[0]
       if (def) setSelectedAddrId(def.id)
     } catch {}
   }
 
-  // Debounced promo check: trigger 500ms after user stops typing
+  // Debounced promo check
   useEffect(() => {
     if (promoDebounceRef.current) clearTimeout(promoDebounceRef.current)
     const code = promoInput.trim()
-    if (!code) {
-      setPromoCheck(null)
-      setPromoChecking(false)
-      return
-    }
+    if (!code) { setPromoCheck(null); setPromoChecking(false); return }
     setPromoChecking(true)
     promoDebounceRef.current = setTimeout(async () => {
       try {
-        const r = await promoAPI.check(code, cartTotalNow())
+        const total = cart.reduce((s, c) => s + c.price * c.qty, 0)
+        const r = await promoAPI.check(code, total)
         setPromoCheck({ ...r.data, error: null })
       } catch (e) {
         setPromoCheck({ valid: false, error: e?.response?.data?.error || 'Xato' })
-      } finally {
-        setPromoChecking(false)
-      }
-    }, 500)
+      } finally { setPromoChecking(false) }
+    }, 450)
     return () => promoDebounceRef.current && clearTimeout(promoDebounceRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promoInput, cart])
-
-  // Snapshot of current cart total (for promo check that doesn't capture stale closures)
-  const cartTotalNow = () => cart.reduce((s, c) => s + c.price * c.qty, 0)
 
   const maybeAskLocation = () => {
     if (!navigator.geolocation) return
     if (localStorage.getItem('shop_location_asked') === '1') return
     localStorage.setItem('shop_location_asked', '1')
-    // Soft request — no error toast if denied at this stage
     navigator.geolocation.getCurrentPosition(
       (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
@@ -214,9 +231,7 @@ export default function ShopPage() {
       toast.success(`${tr('helloPrefix')}, ${r.data.customer.first_name}!`)
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Xatolik')
-    } finally {
-      setRegistering(false)
-    }
+    } finally { setRegistering(false) }
   }
 
   const logout = () => {
@@ -244,56 +259,42 @@ export default function ShopPage() {
   const decQty = id => setCart(prev =>
     prev.map(c => c.id === id ? { ...c, qty: c.qty - 1 } : c).filter(c => c.qty > 0)
   )
-  const cartTotal = cart.reduce((s, c) => s + c.price * c.qty, 0)
-  const cartCount = cart.reduce((s, c) => s + c.qty, 0)
+  const cartTotal = useMemo(() => cart.reduce((s, c) => s + c.price * c.qty, 0), [cart])
+  const cartCount = useMemo(() => cart.reduce((s, c) => s + c.qty, 0), [cart])
 
-  // Geolocation (active call from button)
+  // Geolocation
   const getLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error(tr('browserNoGeo'))
-      return
-    }
+    if (!navigator.geolocation) { toast.error(tr('browserNoGeo')); return }
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        toast.success('✓')
-        setLocating(false)
+        toast.success('✓'); setLocating(false)
       },
       (err) => {
         let msg = tr('locationFailed')
         if (err.code === 1) msg = tr('locationDenied')
-        toast.error(msg)
-        setLocating(false)
+        toast.error(msg); setLocating(false)
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }
 
-  // Address management
   const saveAddress = async () => {
-    if (!newAddrText.trim()) {
-      toast.error(tr('errorAddrEmpty'))
-      return
-    }
+    if (!newAddrText.trim()) { toast.error(tr('errorAddrEmpty')); return }
     try {
       const payload = {
         label: addrLabel || 'Manzil',
         address: newAddrText.trim(),
-        lat: coords?.lat,
-        lng: coords?.lng,
+        lat: coords?.lat, lng: coords?.lng,
         is_default: addresses.length === 0,
       }
       const r = await customerAPI.addAddress(payload)
       setAddresses(prev => [r.data, ...prev])
       setSelectedAddrId(r.data.id)
-      setNewAddrText('')
-      setCoords(null)
-      setShowAddAddr(false)
+      setNewAddrText(''); setCoords(null); setShowAddAddr(false)
       toast.success(tr('addrSaved'))
-    } catch (e) {
-      toast.error(e?.response?.data?.error || 'Xatolik')
-    }
+    } catch (e) { toast.error(e?.response?.data?.error || 'Xatolik') }
   }
 
   const removeAddress = async (id) => {
@@ -305,7 +306,6 @@ export default function ShopPage() {
     } catch { toast.error('Xatolik') }
   }
 
-  // Submit order
   const submitOrder = async () => {
     if (cart.length === 0) { toast.error(tr('cartEmpty')); return }
     if (deliveryType === 'delivery') {
@@ -325,25 +325,34 @@ export default function ShopPage() {
         delivery_lng: addr?.lng || undefined,
       })
       setOrderCode(res.data.order_code)
-      setCart([])
-      setNote('')
-      setPromoInput('')
-      setPromoCheck(null)
+      setCart([]); setNote(''); setPromoInput(''); setPromoCheck(null)
       setView('success')
-      loadOrders()
+      loadOrders(false)
     } catch (e) {
       toast.error(e?.response?.data?.error || "Buyurtma jo'natilmadi")
-    } finally {
-      setSubmitting(false)
-    }
+    } finally { setSubmitting(false) }
   }
 
-  // Categories: all admin-known + any extras in menu, plus 'all'
+  // Cancel order
+  const openCancel = (code) => { setCancelOrderCode(code); setCancelReason('') }
+  const closeCancel = () => { setCancelOrderCode(null); setCancelReason('') }
+  const confirmCancel = async () => {
+    if (!cancelOrderCode) return
+    setCancelling(true)
+    try {
+      await customerAPI.cancelOrder(cancelOrderCode, cancelReason.trim())
+      toast.success(tr('cancelDone'))
+      closeCancel()
+      loadOrders(false)
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Xatolik')
+    } finally { setCancelling(false) }
+  }
+
+  // Visible categories
   const visibleCategories = useMemo(() => {
     const inMenu = new Set(menu.map(m => m.category))
-    const knownInOrder = CATEGORY_META
-      .filter(c => inMenu.has(c.src))
-      .map(c => c.src)
+    const knownInOrder = CATEGORY_META.filter(c => inMenu.has(c.src)).map(c => c.src)
     const extras = [...inMenu].filter(c => !CATEGORY_META.find(m => m.src === c))
     return ['all', ...knownInOrder, ...extras]
   }, [menu])
@@ -357,7 +366,22 @@ export default function ShopPage() {
     .sort((a, b) => b.price - a.price)
   , [menu, category, search])
 
-  // Stats
+  // Group items by category when 'all' is selected (sections)
+  const grouped = useMemo(() => {
+    if (category !== 'all' || search) return null
+    const map = new Map()
+    for (const m of filtered) {
+      if (!map.has(m.category)) map.set(m.category, [])
+      map.get(m.category).push(m)
+    }
+    // sort sections by CATEGORY_META order
+    const orderedKeys = CATEGORY_META
+      .filter(c => map.has(c.src))
+      .map(c => c.src)
+    const extraKeys = [...map.keys()].filter(k => !CATEGORY_META.find(c => c.src === k))
+    return [...orderedKeys, ...extraKeys].map(key => ({ key, items: map.get(key) }))
+  }, [filtered, category, search])
+
   const activeOrder = orders.find(o => ACTIVE_STATUSES.includes(o.status))
   const selectedAddress = addresses.find(a => a.id === selectedAddrId)
   const completedOrders = orders.filter(o => o.status === 'served')
@@ -368,13 +392,11 @@ export default function ShopPage() {
   if (checkingAuth) {
     return (
       <div className="shop-loading">
-        <Loader size={40} className="spin" />
-        <p>...</p>
+        <div className="shop-splash-logo">🍽️</div>
       </div>
     )
   }
 
-  // WELCOME / REGISTRATION
   if (!customer) {
     if (authStep === 'welcome') {
       return (
@@ -418,44 +440,28 @@ export default function ShopPage() {
           <p className="shop-auth-intro">{tr('registerIntro')}</p>
           <div className="shop-input-with-icon">
             <Phone size={16} />
-            <input
-              className="shop-input"
-              type="tel"
+            <input className="shop-input" type="tel"
               placeholder={tr('phonePlaceholder')}
-              value={regPhone}
-              onChange={e => setRegPhone(e.target.value)}
-            />
+              value={regPhone} onChange={e => setRegPhone(e.target.value)} />
           </div>
-          <input
-            className="shop-input"
+          <input className="shop-input"
             placeholder={tr('firstName') + ' *'}
-            value={regFirst}
-            onChange={e => setRegFirst(e.target.value)}
-          />
-          <input
-            className="shop-input"
+            value={regFirst} onChange={e => setRegFirst(e.target.value)} />
+          <input className="shop-input"
             placeholder={tr('lastName')}
-            value={regLast}
-            onChange={e => setRegLast(e.target.value)}
-          />
-          <button
-            className="shop-btn-primary shop-btn-full"
-            onClick={doRegister}
-            disabled={registering}
-          >
+            value={regLast} onChange={e => setRegLast(e.target.value)} />
+          <button className="shop-btn-primary shop-btn-full"
+            onClick={doRegister} disabled={registering}>
             {registering
               ? <><Loader size={16} className="spin" /> {tr('checking')}</>
               : <>{tr('continue')} <Check size={16} /></>}
           </button>
-          <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 16 }}>
-            {tr('registerNote')}
-          </p>
+          <p className="shop-fine-print">{tr('registerNote')}</p>
         </div>
       </div>
     )
   }
 
-  // SUCCESS view
   if (view === 'success') {
     return (
       <div className="shop-success">
@@ -463,7 +469,7 @@ export default function ShopPage() {
         <h1>{tr('orderAccepted')}</h1>
         <div className="shop-success-code">#{orderCode}</div>
         <p>{tr('weWillCall')}</p>
-        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+        <div className="shop-success-actions">
           <button className="shop-btn-secondary" onClick={() => { setView('home'); setTab('orders'); setOrderCode('') }}>
             <ClipboardList size={16} /> {tr('trackOrder')}
           </button>
@@ -475,8 +481,8 @@ export default function ShopPage() {
     )
   }
 
-  // CHECKOUT view
   if (view === 'checkout') {
+    const finalPrice = promoCheck && promoCheck.valid ? promoCheck.final_price : cartTotal
     return (
       <div className="shop-page">
         <header className="shop-header-simple">
@@ -487,9 +493,8 @@ export default function ShopPage() {
         </header>
 
         <div className="shop-checkout">
-          {/* Cart summary */}
           <div className="shop-section">
-            <h3><ShoppingBag size={16} /> {tr('cartItems')} ({cartCount})</h3>
+            <h3 className="shop-section-title"><ShoppingBag size={16} /> {tr('cartItems')} <span className="shop-pill">{cartCount}</span></h3>
             {cart.map(c => (
               <div key={c.id} className="shop-summary-row">
                 <span>{c.qty}× {c.name}</span>
@@ -502,23 +507,16 @@ export default function ShopPage() {
             </div>
           </div>
 
-          {/* Delivery type */}
           <div className="shop-section">
-            <h3>{tr('delivery')}</h3>
+            <h3 className="shop-section-title">{tr('delivery')}</h3>
             <div className="shop-toggle">
-              <button
-                className={`shop-toggle-btn ${deliveryType === 'delivery' ? 'active' : ''}`}
-                onClick={() => setDeliveryType('delivery')}
-              >
-                <Truck size={18} />
-                <span>{tr('deliveryNow')}</span>
+              <button className={`shop-toggle-btn ${deliveryType === 'delivery' ? 'active' : ''}`}
+                onClick={() => setDeliveryType('delivery')}>
+                <Truck size={18} /><span>{tr('deliveryNow')}</span>
               </button>
-              <button
-                className={`shop-toggle-btn ${deliveryType === 'pickup' ? 'active' : ''}`}
-                onClick={() => setDeliveryType('pickup')}
-              >
-                <Store size={18} />
-                <span>{tr('pickup')}</span>
+              <button className={`shop-toggle-btn ${deliveryType === 'pickup' ? 'active' : ''}`}
+                onClick={() => setDeliveryType('pickup')}>
+                <Store size={18} /><span>{tr('pickup')}</span>
               </button>
             </div>
 
@@ -527,32 +525,19 @@ export default function ShopPage() {
                 {addresses.length > 0 ? (
                   <div className="shop-addresses">
                     {addresses.map(a => (
-                      <label
-                        key={a.id}
-                        className={`shop-addr ${selectedAddrId === a.id ? 'selected' : ''}`}
-                      >
-                        <input
-                          type="radio"
-                          name="addr"
+                      <label key={a.id} className={`shop-addr ${selectedAddrId === a.id ? 'selected' : ''}`}>
+                        <input type="radio" name="addr"
                           checked={selectedAddrId === a.id}
-                          onChange={() => setSelectedAddrId(a.id)}
-                        />
+                          onChange={() => setSelectedAddrId(a.id)} />
                         <div className="shop-addr-body">
-                          <div className="shop-addr-label">
-                            <MapPin size={14} /> {a.label}
-                          </div>
+                          <div className="shop-addr-label"><MapPin size={14} /> {a.label}</div>
                           <div className="shop-addr-text">{a.address}</div>
-                          {a.lat && a.lng && (
-                            <div className="shop-addr-coord">📍 {a.lat.toFixed(4)}, {a.lng.toFixed(4)}</div>
-                          )}
                         </div>
                       </label>
                     ))}
                   </div>
                 ) : (
-                  <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 10 }}>
-                    {tr('noAddresses')}
-                  </p>
+                  <p className="shop-muted">{tr('noAddresses')}</p>
                 )}
 
                 {!showAddAddr ? (
@@ -560,39 +545,24 @@ export default function ShopPage() {
                     <Plus size={16} /> {tr('addNewAddress')}
                   </button>
                 ) : (
-                  <div style={{ marginTop: 8, padding: 12, background: '#F9FAFB', borderRadius: 10 }}>
-                    <input
-                      className="shop-input"
+                  <div className="shop-addr-form">
+                    <input className="shop-input"
                       placeholder={tr('addrLabelPlaceholder')}
-                      value={addrLabel}
-                      onChange={e => setAddrLabel(e.target.value)}
-                    />
-                    <input
-                      className="shop-input"
+                      value={addrLabel} onChange={e => setAddrLabel(e.target.value)} />
+                    <input className="shop-input"
                       placeholder={tr('addrTextPlaceholder')}
-                      value={newAddrText}
-                      onChange={e => setNewAddrText(e.target.value)}
-                    />
-                    <button
-                      className="shop-btn-secondary"
-                      onClick={getLocation}
-                      disabled={locating}
-                      style={{ marginTop: 4 }}
-                    >
+                      value={newAddrText} onChange={e => setNewAddrText(e.target.value)} />
+                    <button className="shop-btn-secondary" onClick={getLocation} disabled={locating}>
                       {locating
                         ? <><Loader size={16} className="spin" /> {tr('locating')}</>
                         : <><MapPin size={16} /> {coords ? tr('locationFetched') : tr('getLocation')}</>}
                     </button>
                     {coords && (
-                      <div className="shop-coords">
-                        📍 {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-                      </div>
+                      <div className="shop-coords">📍 {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</div>
                     )}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                      <button
-                        className="shop-btn-secondary"
-                        onClick={() => { setShowAddAddr(false); setNewAddrText(''); setCoords(null) }}
-                      >
+                    <div className="shop-addr-form-actions">
+                      <button className="shop-btn-ghost"
+                        onClick={() => { setShowAddAddr(false); setNewAddrText(''); setCoords(null) }}>
                         {tr('cancel')}
                       </button>
                       <button className="shop-btn-primary shop-btn-full" onClick={saveAddress}>
@@ -605,23 +575,19 @@ export default function ShopPage() {
             )}
           </div>
 
-          {/* Promo code */}
           <div className="shop-section">
-            <h3>🎟️ {tr('promoCode')}</h3>
+            <h3 className="shop-section-title">🎟️ {tr('promoCode')}</h3>
             <div className="shop-promo-row">
-              <input
-                className="shop-input"
+              <input className="shop-input shop-input-promo"
                 placeholder={tr('promoCode')}
                 value={promoInput}
-                onChange={e => setPromoInput(e.target.value.toUpperCase())}
-                style={{ fontFamily: 'monospace', letterSpacing: 1, fontWeight: 600, marginBottom: 0 }}
-              />
-              {promoChecking && <Loader size={18} className="spin" style={{ color: '#FF6B35', marginLeft: 8 }} />}
+                onChange={e => setPromoInput(e.target.value.toUpperCase())} />
+              {promoChecking && <Loader size={16} className="spin shop-promo-loader" />}
             </div>
             {promoCheck && promoCheck.valid && (
               <div className="shop-promo-ok">
                 <Check size={14} />
-                <span>{tr('promoApplied')} — </span>
+                <span>{tr('promoApplied')}</span>
                 <strong>−{fmt(promoCheck.discount_value)} {tr('sum')}</strong>
               </div>
             )}
@@ -630,75 +596,63 @@ export default function ShopPage() {
             )}
           </div>
 
-          {/* Final price summary (shown when a promo is applied) */}
           {promoCheck && promoCheck.valid && promoCheck.discount_value > 0 && (
             <div className="shop-section shop-price-summary">
               <div className="shop-summary-row">
                 <span>{tr('total')}</span>
-                <span style={{ textDecoration: 'line-through', color: '#9CA3AF' }}>{fmt(cartTotal)} {tr('sum')}</span>
+                <span className="shop-strike">{fmt(cartTotal)} {tr('sum')}</span>
               </div>
-              <div className="shop-summary-row" style={{ color: '#10B981' }}>
+              <div className="shop-summary-row shop-summary-discount">
                 <span>🎟️ {promoCheck.label || tr('promoApplied')}</span>
-                <span style={{ fontWeight: 700 }}>−{fmt(promoCheck.discount_value)} {tr('sum')}</span>
+                <span>−{fmt(promoCheck.discount_value)} {tr('sum')}</span>
               </div>
-              <div className="shop-summary-total">
+              <div className="shop-summary-total shop-summary-final">
                 <span>✓</span>
                 <span>{fmt(promoCheck.final_price)} {tr('sum')}</span>
               </div>
             </div>
           )}
 
-          {/* Note */}
           <div className="shop-section">
-            <textarea
-              className="shop-input"
-              rows={2}
+            <textarea className="shop-input shop-textarea" rows={2}
               placeholder={tr('note')}
-              value={note}
-              onChange={e => setNote(e.target.value)}
-            />
+              value={note} onChange={e => setNote(e.target.value)} />
           </div>
 
-          <button
-            className="shop-btn-primary shop-btn-checkout"
-            onClick={submitOrder}
-            disabled={submitting}
-          >
+          <button className="shop-btn-primary shop-btn-checkout"
+            onClick={submitOrder} disabled={submitting}>
             {submitting
               ? <><Loader size={18} className="spin" /> {tr('sending')}</>
-              : <><Check size={18} /> {tr('placeOrder')} — {fmt(promoCheck && promoCheck.valid ? promoCheck.final_price : cartTotal)} {tr('sum')}</>}
+              : <><Check size={18} /> {tr('placeOrder')} · {fmt(finalPrice)} {tr('sum')}</>}
           </button>
         </div>
       </div>
     )
   }
 
-  // ───────── MAIN APP (HOME) ─────────
+  // ───────── MAIN APP ─────────
 
   const renderItemCard = (item) => {
     const cartItem = inCart(item.id)
-    const fallbackEmoji = categoryMeta(item.category).emoji
+    const fallback = categoryMeta(item.category).emoji
     const hasImage = item.image_url && !imgErrors[item.id]
     return (
-      <div key={item.id} className="shop-card" onClick={() => !cartItem && addToCart(item)}>
-        {hasImage ? (
-          <div className="shop-card-img-wrap">
-            <img
-              src={item.image_url}
-              alt={item.name}
-              className="shop-card-img-real"
-              loading="lazy"
-              onError={() => setImgErrors(p => ({ ...p, [item.id]: true }))}
-            />
-          </div>
-        ) : (
-          <div className="shop-card-img shop-card-img-empty">{fallbackEmoji}</div>
-        )}
+      <article key={item.id} className="shop-card"
+        onClick={() => !cartItem && addToCart(item)}>
+        <div className="shop-card-img-wrap">
+          {hasImage ? (
+            <img src={item.image_url} alt={item.name}
+              className="shop-card-img-real" loading="lazy"
+              onError={() => setImgErrors(p => ({ ...p, [item.id]: true }))} />
+          ) : (
+            <div className="shop-card-img-empty">{fallback}</div>
+          )}
+        </div>
         <div className="shop-card-body">
-          <h3>{item.name}</h3>
-          {item.description && <p>{item.description}</p>}
+          <h3 className="shop-card-title">{item.name}</h3>
+          {item.description && <p className="shop-card-desc">{item.description}</p>}
           <div className="shop-card-footer">
-            <span className="shop-price">{fmt(item.price)} {tr('sum')}</span>
+            <span className="shop-price">{fmt(item.price)} <small>{tr('sum')}</small></span>
             {cartItem ? (
               <div className="shop-qty" onClick={e => e.stopPropagation()}>
                 <button onClick={() => decQty(item.id)}><Minus size={14} /></button>
@@ -707,12 +661,12 @@ export default function ShopPage() {
               </div>
             ) : (
               <button className="shop-add" onClick={(e) => { e.stopPropagation(); addToCart(item) }}>
-                <Plus size={16} />
+                <Plus size={18} />
               </button>
             )}
           </div>
         </div>
-      </div>
+      </article>
     )
   }
 
@@ -724,8 +678,8 @@ export default function ShopPage() {
           <header className="shop-header">
             <div className="shop-header-row">
               <div>
-                <h1>🍽️ {tr('appName')}</h1>
-                <p className="shop-subtitle">{tr('helloPrefix')}, {customer.first_name}!</p>
+                <p className="shop-greeting">{tr('helloPrefix')}, {customer.first_name} 👋</p>
+                <h1>{tr('appName')}</h1>
               </div>
               <div className="shop-header-langs">
                 {LANGS.map(l => (
@@ -747,10 +701,9 @@ export default function ShopPage() {
             )}
           </header>
 
-          {/* Active order banner */}
           {activeOrder && (
             <div className="shop-active-banner" onClick={() => setTab('orders')}>
-              <div className="shop-active-banner-top">
+              <div className="shop-active-banner-head">
                 <div>
                   <div className="shop-active-banner-label">{tr('activeOrder')} #{activeOrder.order_code}</div>
                   <div className="shop-active-banner-status">{tr(statusKey(activeOrder.status))}</div>
@@ -763,14 +716,10 @@ export default function ShopPage() {
 
           <div className="shop-search">
             <Search size={16} />
-            <input
-              placeholder={tr('searchPlaceholder')}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+            <input placeholder={tr('searchPlaceholder')}
+              value={search} onChange={e => setSearch(e.target.value)} />
           </div>
 
-          {/* Category icon chips */}
           <div className="shop-cats">
             {visibleCategories.map(c => {
               if (c === 'all') {
@@ -795,19 +744,39 @@ export default function ShopPage() {
             })}
           </div>
 
-          {loadingMenu ? (
-            <div className="shop-loading" style={{ minHeight: 200 }}>
-              <Loader size={32} className="spin" />
+          {loadingMenu && menu.length === 0 ? (
+            <div className="shop-grid">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="shop-card shop-card-skeleton">
+                  <div className="shop-card-img-wrap shop-skel"></div>
+                  <div className="shop-card-body">
+                    <div className="shop-skel-line"></div>
+                    <div className="shop-skel-line shop-skel-line-short"></div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="shop-empty">
-              <div style={{ fontSize: 48 }}>🍽️</div>
+              <div className="shop-empty-emoji">🍽️</div>
               <h2>{tr('emptyCategory')}</h2>
             </div>
-          ) : (
-            <div className="shop-grid">
-              {filtered.map(renderItemCard)}
+          ) : grouped ? (
+            <div className="shop-sections">
+              {grouped.map(g => {
+                const meta = categoryMeta(g.key)
+                return (
+                  <section key={g.key} className="shop-section-group">
+                    <h2 className="shop-section-h"><span>{meta.emoji}</span> {tr(meta.key)}</h2>
+                    <div className="shop-grid">
+                      {g.items.map(renderItemCard)}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
+          ) : (
+            <div className="shop-grid">{filtered.map(renderItemCard)}</div>
           )}
 
           {cartCount > 0 && (
@@ -815,6 +784,7 @@ export default function ShopPage() {
               <ShoppingCart size={22} />
               <span className="shop-cart-fab-count">{cartCount}</span>
               <span className="shop-cart-fab-total">{fmt(cartTotal)} {tr('sum')}</span>
+              <ChevronRight size={20} />
             </button>
           )}
         </>
@@ -824,13 +794,13 @@ export default function ShopPage() {
       {tab === 'orders' && (
         <>
           <header className="shop-header">
-            <div>
-              <h1>📋 {tr('myOrders')}</h1>
-            </div>
+            <h1>📋 {tr('myOrders')}</h1>
           </header>
-          {loadingOrders ? (
-            <div className="shop-loading" style={{ minHeight: 200 }}>
-              <Loader size={32} className="spin" />
+          {loadingOrders && orders.length === 0 ? (
+            <div className="shop-orders">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="shop-order shop-skel" style={{ height: 140 }}></div>
+              ))}
             </div>
           ) : orders.length === 0 ? (
             <div className="shop-empty">
@@ -844,8 +814,9 @@ export default function ShopPage() {
           ) : (
             <div className="shop-orders">
               {orders.map(o => {
-                const st = statusColor(o.status)
+                const theme = STATUS_THEME[o.status] || STATUS_THEME.pending
                 const isActive = ACTIVE_STATUSES.includes(o.status)
+                const canCancel = CANCELLABLE.includes(o.status)
                 return (
                   <div key={o.id} className={`shop-order ${isActive ? 'shop-order-active' : ''}`}>
                     <div className="shop-order-head">
@@ -853,12 +824,12 @@ export default function ShopPage() {
                         <div className="shop-order-code">#{o.order_code}</div>
                         <div className="shop-order-date">{fmtDate(o.created_at)}</div>
                       </div>
-                      <span className="shop-status" style={{ background: st.bg, color: st.color }}>
+                      <span className="shop-status" style={{ background: theme.bg, color: theme.color }}>
+                        <span className="shop-status-dot" style={{ background: theme.dot }} />
                         {tr(statusKey(o.status))}
                       </span>
                     </div>
 
-                    {/* Progress bar for active or recent orders, hidden for rejected */}
                     {o.status !== 'rejected' && (
                       <OrderProgress status={o.status} tr={tr} />
                     )}
@@ -872,11 +843,18 @@ export default function ShopPage() {
                       ))}
                     </ul>
                     <div className="shop-order-foot">
-                      <span>
-                        {o.delivery_type === 'delivery' ? <><Truck size={13} /> {tr('deliveryNow')}</> : <><Store size={13} /> {tr('pickup')}</>}
+                      <span className="shop-order-delivery">
+                        {o.delivery_type === 'delivery'
+                          ? <><Truck size={13} /> {tr('deliveryNow')}</>
+                          : <><Store size={13} /> {tr('pickup')}</>}
                       </span>
                       <span className="shop-order-total">{fmt(o.final_price)} {tr('sum')}</span>
                     </div>
+                    {canCancel && (
+                      <button className="shop-order-cancel-btn" onClick={() => openCancel(o.order_code)}>
+                        <X size={14} /> {tr('cancelOrder')}
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -889,78 +867,62 @@ export default function ShopPage() {
       {tab === 'profile' && (
         <>
           <header className="shop-header">
-            <div>
-              <h1>👤 {tr('profile')}</h1>
-            </div>
+            <h1>👤 {tr('profile')}</h1>
           </header>
           <div className="shop-profile">
-            {/* Avatar + name */}
             <div className="shop-section">
               <div className="shop-profile-card">
                 <div className="shop-profile-avatar">
                   {customer.first_name[0]?.toUpperCase()}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>
-                    {customer.first_name} {customer.last_name}
-                  </div>
-                  <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <Phone size={12} /> {customer.phone}
-                  </div>
+                <div className="shop-profile-info">
+                  <div className="shop-profile-name">{customer.first_name} {customer.last_name}</div>
+                  <div className="shop-profile-phone"><Phone size={12} /> {customer.phone}</div>
                 </div>
               </div>
             </div>
 
-            {/* Stats */}
             <div className="shop-stats">
               <div className="shop-stat">
-                <div className="shop-stat-icon" style={{ background: '#FFE4D6', color: '#FF6B35' }}>
+                <div className="shop-stat-icon" style={{ background: '#FED7AA', color: '#9A3412' }}>
                   <ShoppingBag size={18} />
                 </div>
                 <div className="shop-stat-value">{orders.length}</div>
                 <div className="shop-stat-label">{tr('totalOrders')}</div>
               </div>
               <div className="shop-stat">
-                <div className="shop-stat-icon" style={{ background: '#D1FAE5', color: '#10B981' }}>
+                <div className="shop-stat-icon" style={{ background: '#D1FAE5', color: '#065F46' }}>
                   <Sparkles size={18} />
                 </div>
                 <div className="shop-stat-value">{fmt(totalSpent)}</div>
-                <div className="shop-stat-label">{tr('totalSpent')} {tr('sum')}</div>
+                <div className="shop-stat-label">{tr('totalSpent')}</div>
               </div>
               <div className="shop-stat">
-                <div className="shop-stat-icon" style={{ background: '#E0F2FE', color: '#0EA5E9' }}>
-                  <UserCircle size={18} />
+                <div className="shop-stat-icon" style={{ background: '#DBEAFE', color: '#1E40AF' }}>
+                  <Star size={18} />
                 </div>
                 <div className="shop-stat-value">{fmtJoin(customer.created_at)}</div>
                 <div className="shop-stat-label">{tr('joinedOn')}</div>
               </div>
             </div>
 
-            {/* Language */}
             <div className="shop-section">
-              <h3><Globe2 size={16} /> {tr('language')}</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <h3 className="shop-section-title"><Globe2 size={16} /> {tr('language')}</h3>
+              <div className="shop-lang-row">
                 {LANGS.map(l => (
-                  <button
-                    key={l.code}
-                    type="button"
-                    onClick={() => changeLang(l.code)}
-                    className={`shop-lang-card ${lang === l.code ? 'active' : ''}`}
-                  >
-                    <span style={{ fontSize: 22 }}>{l.flag}</span>
+                  <button key={l.code} type="button" onClick={() => changeLang(l.code)}
+                    className={`shop-lang-card ${lang === l.code ? 'active' : ''}`}>
+                    <span className="shop-lang-card-flag">{l.flag}</span>
                     <span>{l.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Addresses */}
             <div className="shop-section">
-              <h3><MapPin size={16} /> {tr('myAddresses')}</h3>
+              <h3 className="shop-section-title"><MapPin size={16} /> {tr('myAddresses')}</h3>
               {addresses.length === 0 ? (
-                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
-                  {tr('noAddrsProfile')}
-                </p>
+                <p className="shop-muted">{tr('noAddrsProfile')}</p>
               ) : (
                 <div className="shop-addresses">
                   {addresses.map(a => (
@@ -981,17 +943,16 @@ export default function ShopPage() {
               )}
             </div>
 
-            {/* Settings/info list */}
             <div className="shop-section shop-section-list">
               <button className="shop-list-row" onClick={() => window.open('tel:+998901234567')}>
-                <div className="shop-list-icon" style={{ background: '#FEF3C7', color: '#F59E0B' }}>
+                <div className="shop-list-icon" style={{ background: '#FEF3C7', color: '#92400E' }}>
                   <Phone size={16} />
                 </div>
                 <div className="shop-list-text">{tr('helpSupport')}</div>
                 <ChevronRight size={16} color="#9CA3AF" />
               </button>
               <button className="shop-list-row" onClick={() => toast(`${tr('appName')} v1.0`)}>
-                <div className="shop-list-icon" style={{ background: '#E0F2FE', color: '#0EA5E9' }}>
+                <div className="shop-list-icon" style={{ background: '#DBEAFE', color: '#1E40AF' }}>
                   <Info size={16} />
                 </div>
                 <div className="shop-list-text">{tr('aboutApp')}</div>
@@ -1006,22 +967,46 @@ export default function ShopPage() {
         </>
       )}
 
-      {/* BOTTOM NAVIGATION */}
       <nav className="shop-bottom-nav">
         <button className={`shop-nav-item ${tab === 'menu' ? 'active' : ''}`} onClick={() => setTab('menu')}>
-          <HomeIcon size={22} />
-          <span>{tr('tabMenu')}</span>
+          <HomeIcon size={22} /><span>{tr('tabMenu')}</span>
         </button>
         <button className={`shop-nav-item ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
-          <ClipboardList size={22} />
-          <span>{tr('tabOrders')}</span>
+          <ClipboardList size={22} /><span>{tr('tabOrders')}</span>
           {orders.some(o => ACTIVE_STATUSES.includes(o.status)) && <span className="shop-nav-dot" />}
         </button>
         <button className={`shop-nav-item ${tab === 'profile' ? 'active' : ''}`} onClick={() => setTab('profile')}>
-          <UserCircle size={22} />
-          <span>{tr('tabProfile')}</span>
+          <UserCircle size={22} /><span>{tr('tabProfile')}</span>
         </button>
       </nav>
+
+      {/* CANCEL ORDER MODAL */}
+      {cancelOrderCode && (
+        <div className="shop-modal-overlay" onClick={closeCancel}>
+          <div className="shop-modal" onClick={e => e.stopPropagation()}>
+            <div className="shop-modal-icon">
+              <AlertTriangle size={28} />
+            </div>
+            <h3>{tr('cancelConfirm')}</h3>
+            <p className="shop-modal-sub">#{cancelOrderCode}</p>
+            <textarea className="shop-input shop-textarea"
+              rows={3}
+              placeholder={tr('cancelReasonPh')}
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)} />
+            <div className="shop-modal-actions">
+              <button className="shop-btn-ghost" onClick={closeCancel} disabled={cancelling}>
+                {tr('keepOrder')}
+              </button>
+              <button className="shop-btn-danger" onClick={confirmCancel} disabled={cancelling}>
+                {cancelling
+                  ? <><Loader size={16} className="spin" /></>
+                  : <><X size={16} /> {tr('cancelTitle')}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1039,7 +1024,7 @@ function OrderProgress({ status, tr, compact }) {
           <React.Fragment key={step}>
             <div className={`shop-progress-step ${done ? 'done' : ''} ${isCurrent ? 'current' : ''}`}>
               <div className="shop-progress-dot">
-                <Icon size={compact ? 13 : 16} />
+                <Icon size={compact ? 12 : 14} />
               </div>
               {!compact && <div className="shop-progress-label">{tr(STEP_KEYS[i])}</div>}
             </div>

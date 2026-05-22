@@ -91,20 +91,34 @@ export default function KitchenPage() {
   const pollOrders = async () => {
     try {
       const res = await ordersAPI.getAll()
-      const pending = (res.data || []).filter(o => o.status === 'pending')
+      // Kitchen handles both freshly-accepted and currently-cooking orders
+      const active = (res.data || []).filter(o => o.status === 'pending' || o.status === 'cooking')
       // Seed seenIds with the current order set so we don't beep for everything on first run
       if (seenIdsRef.current.size === 0) {
-        pending.forEach(o => seenIdsRef.current.add(o.id))
-        setOrders(pending)
+        active.forEach(o => seenIdsRef.current.add(o.id))
+        setOrders(active)
         return
       }
-      // Detect orders we haven't seen yet
-      const fresh = pending.filter(o => !seenIdsRef.current.has(o.id))
+      // Detect orders we haven't seen yet (new pending only — already-cooking ones don't beep)
+      const fresh = active.filter(o => o.status === 'pending' && !seenIdsRef.current.has(o.id))
       fresh.forEach(o => handleNewOrder(o))
-      // Drop orders that are no longer pending (e.g. served by another client)
-      setOrders(prev => prev.filter(o => pending.some(p => p.id === o.id)))
+      // Drop orders that are no longer pending/cooking (e.g. marked ready by another client)
+      setOrders(prev => prev.filter(o => active.some(p => p.id === o.id)))
     } catch {}
   }
+
+  // Auto-promote the topmost pending order to "cooking" once the chef sees it
+  // (i.e. it's #1 in their queue). This makes the customer's "Tayyorlanmoqda" go active.
+  useEffect(() => {
+    if (orders.length === 0) return
+    const top = orders[orders.length - 1] // oldest = topmost in the queue
+    if (top && top.status === 'pending') {
+      ordersAPI.updateStatus(top.id, 'cooking').then(() => {
+        setOrders(prev => prev.map(o => o.id === top.id ? { ...o, status: 'cooking' } : o))
+      }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders.length])
 
   const playSound = () => {
     try {
@@ -126,18 +140,18 @@ export default function KitchenPage() {
     setLoading(true)
     try {
       const res = await ordersAPI.getAll()
-      const pending = (res.data || []).filter(o => o.status === 'pending')
-      // Mark all existing orders as 'seen' so we don't ring bell for them
-      pending.forEach(o => seenIdsRef.current.add(o.id))
-      setOrders(pending)
+      const active = (res.data || []).filter(o => o.status === 'pending' || o.status === 'cooking')
+      active.forEach(o => seenIdsRef.current.add(o.id))
+      setOrders(active)
     } catch { toast.error('Yuklanmadi') }
     finally { setLoading(false) }
   }
 
+  // "Tayyor" — mark the order as ready (kitchen is done). Courier handles the rest.
   const markDone = async (order) => {
     setCompleting(order.id)
     try {
-      await ordersAPI.updateStatus(order.id, 'served')
+      await ordersAPI.updateStatus(order.id, 'ready')
       setOrders(prev => prev.filter(o => o.id !== order.id))
       toast.success(`Buyurtma #${order.order_code} tayyor!`, { icon: '✅', duration: 4000 })
     } catch { toast.error('Xatolik yuz berdi') }

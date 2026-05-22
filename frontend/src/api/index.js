@@ -105,6 +105,7 @@ export const customerAPI = {
   addresses: () => api.get('/customer/addresses'),
   addAddress: (data) => api.post('/customer/addresses', data),
   deleteAddress: (id) => api.delete(`/customer/addresses/${id}`),
+  cancelOrder: (code, reason) => api.post(`/customer/orders/${code}/cancel`, { reason }),
 }
 
 export const vipAPI = {
