@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { menuAPI, ordersAPI, customerAPI } from '../../api'
 import toast from 'react-hot-toast'
 import {
   ShoppingCart, Plus, Minus, Trash2, X, Search,
-  MapPin, Truck, Store, Phone, User, Check, Loader, ChevronLeft,
+  MapPin, Truck, Store, Phone, User, Check, Loader, ChevronLeft, ChevronRight,
   Home as HomeIcon, ClipboardList, UserCircle, LogOut, Edit3,
+  ShoppingBag, ChefHat, Bike, PackageCheck, Globe2, HelpCircle, Info, Sparkles,
 } from 'lucide-react'
 import './ShopPage.css'
-import { t, getLang, setLang, LANGS } from './shopI18n'
+import { t, getLang, setLang, LANGS, CATEGORY_META, categoryMeta } from './shopI18n'
 
 const fmt = v => Number(v || 0).toLocaleString()
 const fmtDate = (iso) => {
@@ -16,13 +17,24 @@ const fmtDate = (iso) => {
   const pad = n => String(n).padStart(2, '0')
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+const fmtJoin = (iso) => {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+}
+
+const ACTIVE_STATUSES = ['pending', 'cooking', 'ready']
+const STATUS_STEPS = ['pending', 'cooking', 'ready', 'served']
+const STATUS_INDEX = { pending: 0, cooking: 1, ready: 2, served: 3 }
+
 const statusColor = (st) => ({
   pending: { color: '#F59E0B', bg: '#FEF3C7' },
   cooking: { color: '#FF6B35', bg: '#FFE4D6' },
-  ready: { color: '#10B981', bg: '#D1FAE5' },
-  served: { color: '#6B7280', bg: '#F3F4F6' },
+  ready: { color: '#0EA5E9', bg: '#E0F2FE' },
+  served: { color: '#10B981', bg: '#D1FAE5' },
   rejected: { color: '#EF4444', bg: '#FEE2E2' },
 }[st] || { color: '#6B7280', bg: '#F3F4F6' })
+
 const statusKey = (st) => ({
   pending: 'statusPending',
   cooking: 'statusCooking',
@@ -30,6 +42,9 @@ const statusKey = (st) => ({
   served: 'statusServed',
   rejected: 'statusRejected',
 }[st] || 'statusPending')
+
+const STEP_ICONS = [ShoppingBag, ChefHat, Bike, PackageCheck]
+const STEP_KEYS = ['stepPending', 'stepCooking', 'stepReady', 'stepServed']
 
 export default function ShopPage() {
   // Language
@@ -40,14 +55,14 @@ export default function ShopPage() {
   // Auth state
   const [customer, setCustomer] = useState(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
-  const [authStep, setAuthStep] = useState('welcome') // 'welcome' | 'register'
+  const [authStep, setAuthStep] = useState('welcome')
   const [regPhone, setRegPhone] = useState('')
   const [regFirst, setRegFirst] = useState('')
   const [regLast, setRegLast] = useState('')
   const [registering, setRegistering] = useState(false)
 
   // App state
-  const [tab, setTab] = useState('menu') // 'menu' | 'orders' | 'profile'
+  const [tab, setTab] = useState('menu')
   const [menu, setMenu] = useState([])
   const [loadingMenu, setLoadingMenu] = useState(true)
   const [orders, setOrders] = useState([])
@@ -61,7 +76,7 @@ export default function ShopPage() {
   const [search, setSearch] = useState('')
 
   // Checkout
-  const [view, setView] = useState('home') // 'home' | 'checkout' | 'success'
+  const [view, setView] = useState('home')
   const [deliveryType, setDeliveryType] = useState('delivery')
   const [selectedAddrId, setSelectedAddrId] = useState(null)
   const [newAddrText, setNewAddrText] = useState('')
@@ -73,8 +88,8 @@ export default function ShopPage() {
   const [promoInput, setPromoInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState('')
+  const [imgErrors, setImgErrors] = useState({})
 
-  // Persist cart
   useEffect(() => { localStorage.setItem('shop_cart', JSON.stringify(cart)) }, [cart])
 
   // Check auth on mount
@@ -93,7 +108,6 @@ export default function ShopPage() {
     })()
   }, [])
 
-  // Load menu always (even unauthenticated user can browse)
   useEffect(() => { loadMenu() }, [])
   const loadMenu = async () => {
     setLoadingMenu(true)
@@ -104,13 +118,23 @@ export default function ShopPage() {
     finally { setLoadingMenu(false) }
   }
 
-  // Load customer data when logged in
   useEffect(() => {
     if (customer) {
       loadOrders()
       loadAddresses()
+      // Ask for location once after login (if not granted yet)
+      maybeAskLocation()
     }
   }, [customer])
+
+  // Auto-refresh orders every 30s while there's an active order (visible status updates)
+  useEffect(() => {
+    if (!customer) return
+    const hasActive = orders.some(o => ACTIVE_STATUSES.includes(o.status))
+    if (!hasActive) return
+    const id = setInterval(loadOrders, 30000)
+    return () => clearInterval(id)
+  }, [customer, orders])
 
   const loadOrders = async () => {
     setLoadingOrders(true)
@@ -130,10 +154,22 @@ export default function ShopPage() {
     } catch {}
   }
 
+  const maybeAskLocation = () => {
+    if (!navigator.geolocation) return
+    if (localStorage.getItem('shop_location_asked') === '1') return
+    localStorage.setItem('shop_location_asked', '1')
+    // Soft request — no error toast if denied at this stage
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+    )
+  }
+
   // Registration
   const doRegister = async () => {
     if (!regPhone.trim() || !regFirst.trim()) {
-      toast.error('Telefon va ismni kiriting')
+      toast.error(tr('errorRegister'))
       return
     }
     setRegistering(true)
@@ -145,7 +181,7 @@ export default function ShopPage() {
       })
       localStorage.setItem('eco_customer_token', r.data.token)
       setCustomer(r.data.customer)
-      toast.success(`Xush kelibsiz, ${r.data.customer.first_name}!`)
+      toast.success(`${tr('helloPrefix')}, ${r.data.customer.first_name}!`)
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Xatolik')
     } finally {
@@ -154,8 +190,9 @@ export default function ShopPage() {
   }
 
   const logout = () => {
-    if (!window.confirm('Hisobdan chiqishni xohlaysizmi?')) return
+    if (!window.confirm(tr('logoutConfirm'))) return
     localStorage.removeItem('eco_customer_token')
+    localStorage.removeItem('shop_location_asked')
     setCustomer(null)
     setOrders([])
     setAddresses([])
@@ -180,24 +217,22 @@ export default function ShopPage() {
   const cartTotal = cart.reduce((s, c) => s + c.price * c.qty, 0)
   const cartCount = cart.reduce((s, c) => s + c.qty, 0)
 
-  // Geolocation
+  // Geolocation (active call from button)
   const getLocation = () => {
     if (!navigator.geolocation) {
-      toast.error("Brauzer joylashuvni qo'llab-quvvatlamaydi")
+      toast.error(tr('browserNoGeo'))
       return
     }
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        toast.success('Joylashuv olindi ✓')
+        toast.success('✓')
         setLocating(false)
       },
       (err) => {
-        let msg = "Joylashuvni olib bo'lmadi"
-        if (err.code === 1) msg = 'Joylashuvga ruxsat berilmadi'
-        else if (err.code === 2) msg = 'Joylashuv aniqlanmadi'
-        else if (err.code === 3) msg = 'Joylashuv kuttirib qo\'ydi'
+        let msg = tr('locationFailed')
+        if (err.code === 1) msg = tr('locationDenied')
         toast.error(msg)
         setLocating(false)
       },
@@ -208,7 +243,7 @@ export default function ShopPage() {
   // Address management
   const saveAddress = async () => {
     if (!newAddrText.trim()) {
-      toast.error('Manzilni kiriting')
+      toast.error(tr('errorAddrEmpty'))
       return
     }
     try {
@@ -225,14 +260,14 @@ export default function ShopPage() {
       setNewAddrText('')
       setCoords(null)
       setShowAddAddr(false)
-      toast.success('Manzil saqlandi')
+      toast.success(tr('addrSaved'))
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Xatolik')
     }
   }
 
   const removeAddress = async (id) => {
-    if (!window.confirm("Manzilni o'chirasizmi?")) return
+    if (!window.confirm(tr('deleteAddrConfirm'))) return
     try {
       await customerAPI.deleteAddress(id)
       setAddresses(prev => prev.filter(a => a.id !== id))
@@ -247,7 +282,6 @@ export default function ShopPage() {
       const addr = addresses.find(a => a.id === selectedAddrId)
       if (!addr) { toast.error(tr('selectAddress')); return }
     }
-
     setSubmitting(true)
     try {
       const addr = deliveryType === 'delivery' ? addresses.find(a => a.id === selectedAddrId) : null
@@ -265,7 +299,6 @@ export default function ShopPage() {
       setNote('')
       setPromoInput('')
       setView('success')
-      // Refresh orders list in background
       loadOrders()
     } catch (e) {
       toast.error(e?.response?.data?.error || "Buyurtma jo'natilmadi")
@@ -274,14 +307,30 @@ export default function ShopPage() {
     }
   }
 
-  const categories = ['all', ...new Set(menu.map(m => m.category))]
-  const filtered = menu
+  // Categories: all admin-known + any extras in menu, plus 'all'
+  const visibleCategories = useMemo(() => {
+    const inMenu = new Set(menu.map(m => m.category))
+    const knownInOrder = CATEGORY_META
+      .filter(c => inMenu.has(c.src))
+      .map(c => c.src)
+    const extras = [...inMenu].filter(c => !CATEGORY_META.find(m => m.src === c))
+    return ['all', ...knownInOrder, ...extras]
+  }, [menu])
+
+  const filtered = useMemo(() => menu
     .filter(m => {
       const matchCat = category === 'all' || m.category === category
-      const matchSearch = m.name.toLowerCase().includes(search.toLowerCase())
+      const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase())
       return matchCat && matchSearch
     })
     .sort((a, b) => b.price - a.price)
+  , [menu, category, search])
+
+  // Stats
+  const activeOrder = orders.find(o => ACTIVE_STATUSES.includes(o.status))
+  const selectedAddress = addresses.find(a => a.id === selectedAddrId)
+  const completedOrders = orders.filter(o => o.status === 'served')
+  const totalSpent = completedOrders.reduce((s, o) => s + Number(o.final_price || 0), 0)
 
   // ───────── RENDER STATES ─────────
 
@@ -289,25 +338,26 @@ export default function ShopPage() {
     return (
       <div className="shop-loading">
         <Loader size={40} className="spin" />
-        <p>Yuklanmoqda...</p>
+        <p>...</p>
       </div>
     )
   }
 
-  // WELCOME / REGISTRATION — no token yet
+  // WELCOME / REGISTRATION
   if (!customer) {
     if (authStep === 'welcome') {
       return (
         <div className="shop-welcome">
           <div className="shop-welcome-bg" />
+          <div className="shop-welcome-blob shop-welcome-blob-1" />
+          <div className="shop-welcome-blob shop-welcome-blob-2" />
           <div className="shop-welcome-content">
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 4 }}>
+            <div className="shop-welcome-lang">
               {LANGS.map(l => (
-                <button key={l.code} onClick={() => changeLang(l.code)} style={{
-                  background: lang === l.code ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.12)',
-                  border: 'none', borderRadius: 8, padding: '4px 8px', color: 'white',
-                  fontSize: 14, cursor: 'pointer',
-                }}>{l.flag}</button>
+                <button key={l.code} onClick={() => changeLang(l.code)}
+                  className={`shop-welcome-lang-btn ${lang === l.code ? 'active' : ''}`}>
+                  {l.flag}
+                </button>
               ))}
             </div>
             <div className="shop-welcome-emoji">🍽️</div>
@@ -319,7 +369,7 @@ export default function ShopPage() {
               <li>{tr('specialDiscounts')}</li>
             </ul>
             <button className="shop-btn-primary" onClick={() => setAuthStep('register')}>
-              {tr('start')}
+              {tr('start')} <ChevronRight size={18} />
             </button>
           </div>
         </div>
@@ -384,7 +434,7 @@ export default function ShopPage() {
         <p>{tr('weWillCall')}</p>
         <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
           <button className="shop-btn-secondary" onClick={() => { setView('home'); setTab('orders'); setOrderCode('') }}>
-            <ClipboardList size={16} /> {tr('myOrders')}
+            <ClipboardList size={16} /> {tr('trackOrder')}
           </button>
           <button className="shop-btn-primary" onClick={() => { setView('home'); setTab('menu'); setOrderCode('') }}>
             {tr('newOrder')}
@@ -408,16 +458,16 @@ export default function ShopPage() {
         <div className="shop-checkout">
           {/* Cart summary */}
           <div className="shop-section">
-            <h3>{tr('cartItems')} ({cartCount})</h3>
+            <h3><ShoppingBag size={16} /> {tr('cartItems')} ({cartCount})</h3>
             {cart.map(c => (
               <div key={c.id} className="shop-summary-row">
                 <span>{c.qty}× {c.name}</span>
-                <span className="shop-summary-price">{fmt(c.price * c.qty)} so'm</span>
+                <span className="shop-summary-price">{fmt(c.price * c.qty)} {tr('sum')}</span>
               </div>
             ))}
             <div className="shop-summary-total">
-              <span>Jami</span>
-              <span>{fmt(cartTotal)} so'm</span>
+              <span>{tr('total')}</span>
+              <span>{fmt(cartTotal)} {tr('sum')}</span>
             </div>
           </div>
 
@@ -470,25 +520,25 @@ export default function ShopPage() {
                   </div>
                 ) : (
                   <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 10 }}>
-                    Hozircha saqlangan manzilingiz yo'q
+                    {tr('noAddresses')}
                   </p>
                 )}
 
                 {!showAddAddr ? (
                   <button className="shop-btn-secondary" onClick={() => setShowAddAddr(true)}>
-                    <Plus size={16} /> Yangi manzil qo'shish
+                    <Plus size={16} /> {tr('addNewAddress')}
                   </button>
                 ) : (
                   <div style={{ marginTop: 8, padding: 12, background: '#F9FAFB', borderRadius: 10 }}>
                     <input
                       className="shop-input"
-                      placeholder="Belgi (Uy, Ish va h.k.)"
+                      placeholder={tr('addrLabelPlaceholder')}
                       value={addrLabel}
                       onChange={e => setAddrLabel(e.target.value)}
                     />
                     <input
                       className="shop-input"
-                      placeholder="To'liq manzil (ko'cha, uy, podyezd)"
+                      placeholder={tr('addrTextPlaceholder')}
                       value={newAddrText}
                       onChange={e => setNewAddrText(e.target.value)}
                     />
@@ -499,8 +549,8 @@ export default function ShopPage() {
                       style={{ marginTop: 4 }}
                     >
                       {locating
-                        ? <><Loader size={16} className="spin" /> Joylashuv olinmoqda...</>
-                        : <><MapPin size={16} /> {coords ? 'Joylashuv olindi ✓ — qaytadan' : 'Joriy joylashuvni olish'}</>}
+                        ? <><Loader size={16} className="spin" /> {tr('locating')}</>
+                        : <><MapPin size={16} /> {coords ? tr('locationFetched') : tr('getLocation')}</>}
                     </button>
                     {coords && (
                       <div className="shop-coords">
@@ -512,10 +562,10 @@ export default function ShopPage() {
                         className="shop-btn-secondary"
                         onClick={() => { setShowAddAddr(false); setNewAddrText(''); setCoords(null) }}
                       >
-                        Bekor
+                        {tr('cancel')}
                       </button>
                       <button className="shop-btn-primary shop-btn-full" onClick={saveAddress}>
-                        <Check size={16} /> Manzilni saqlash
+                        <Check size={16} /> {tr('saveAddress')}
                       </button>
                     </div>
                   </div>
@@ -561,7 +611,48 @@ export default function ShopPage() {
     )
   }
 
-  // ───────── MAIN APP (HOME) — has bottom tabs ─────────
+  // ───────── MAIN APP (HOME) ─────────
+
+  const renderItemCard = (item) => {
+    const cartItem = inCart(item.id)
+    const fallbackEmoji = categoryMeta(item.category).emoji
+    const hasImage = item.image_url && !imgErrors[item.id]
+    return (
+      <div key={item.id} className="shop-card" onClick={() => !cartItem && addToCart(item)}>
+        {hasImage ? (
+          <div className="shop-card-img-wrap">
+            <img
+              src={item.image_url}
+              alt={item.name}
+              className="shop-card-img-real"
+              loading="lazy"
+              onError={() => setImgErrors(p => ({ ...p, [item.id]: true }))}
+            />
+          </div>
+        ) : (
+          <div className="shop-card-img shop-card-img-empty">{fallbackEmoji}</div>
+        )}
+        <div className="shop-card-body">
+          <h3>{item.name}</h3>
+          {item.description && <p>{item.description}</p>}
+          <div className="shop-card-footer">
+            <span className="shop-price">{fmt(item.price)} {tr('sum')}</span>
+            {cartItem ? (
+              <div className="shop-qty" onClick={e => e.stopPropagation()}>
+                <button onClick={() => decQty(item.id)}><Minus size={14} /></button>
+                <span>{cartItem.qty}</span>
+                <button onClick={() => incQty(item.id)}><Plus size={14} /></button>
+              </div>
+            ) : (
+              <button className="shop-add" onClick={(e) => { e.stopPropagation(); addToCart(item) }}>
+                <Plus size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="shop-page">
@@ -569,11 +660,44 @@ export default function ShopPage() {
       {tab === 'menu' && (
         <>
           <header className="shop-header">
-            <div>
-              <h1>🍽️ {tr('appName')}</h1>
-              <p className="shop-subtitle">{tr('helloPrefix')}, {customer.first_name}!</p>
+            <div className="shop-header-row">
+              <div>
+                <h1>🍽️ {tr('appName')}</h1>
+                <p className="shop-subtitle">{tr('helloPrefix')}, {customer.first_name}!</p>
+              </div>
+              <div className="shop-header-langs">
+                {LANGS.map(l => (
+                  <button key={l.code} onClick={() => changeLang(l.code)}
+                    className={`shop-lang-pill ${lang === l.code ? 'active' : ''}`}>
+                    {l.flag}
+                  </button>
+                ))}
+              </div>
             </div>
+            {selectedAddress && (
+              <div className="shop-deliver-to" onClick={() => setTab('profile')}>
+                <MapPin size={14} />
+                <div>
+                  <div className="shop-deliver-label">{tr('deliverTo')}</div>
+                  <div className="shop-deliver-text">{selectedAddress.label} · {selectedAddress.address}</div>
+                </div>
+              </div>
+            )}
           </header>
+
+          {/* Active order banner */}
+          {activeOrder && (
+            <div className="shop-active-banner" onClick={() => setTab('orders')}>
+              <div className="shop-active-banner-top">
+                <div>
+                  <div className="shop-active-banner-label">{tr('activeOrder')} #{activeOrder.order_code}</div>
+                  <div className="shop-active-banner-status">{tr(statusKey(activeOrder.status))}</div>
+                </div>
+                <ChevronRight size={20} />
+              </div>
+              <OrderProgress status={activeOrder.status} tr={tr} compact />
+            </div>
+          )}
 
           <div className="shop-search">
             <Search size={16} />
@@ -584,52 +708,43 @@ export default function ShopPage() {
             />
           </div>
 
+          {/* Category icon chips */}
           <div className="shop-cats">
-            {categories.map(c => (
-              <button
-                key={c}
-                className={`shop-cat ${category === c ? 'active' : ''}`}
-                onClick={() => setCategory(c)}
-              >
-                {c === 'all' ? tr('all') : c}
-              </button>
-            ))}
+            {visibleCategories.map(c => {
+              if (c === 'all') {
+                return (
+                  <button key="all"
+                    className={`shop-cat-chip ${category === 'all' ? 'active' : ''}`}
+                    onClick={() => setCategory('all')}>
+                    <span className="shop-cat-emoji">🍽️</span>
+                    <span>{tr('all')}</span>
+                  </button>
+                )
+              }
+              const meta = categoryMeta(c)
+              return (
+                <button key={c}
+                  className={`shop-cat-chip ${category === c ? 'active' : ''}`}
+                  onClick={() => setCategory(c)}>
+                  <span className="shop-cat-emoji">{meta.emoji}</span>
+                  <span>{tr(meta.key)}</span>
+                </button>
+              )
+            })}
           </div>
 
           {loadingMenu ? (
             <div className="shop-loading" style={{ minHeight: 200 }}>
               <Loader size={32} className="spin" />
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="shop-empty">
+              <div style={{ fontSize: 48 }}>🍽️</div>
+              <h2>{tr('emptyCategory')}</h2>
+            </div>
           ) : (
             <div className="shop-grid">
-              {filtered.map(item => {
-                const cartItem = inCart(item.id)
-                return (
-                  <div key={item.id} className="shop-card" onClick={() => !cartItem && addToCart(item)}>
-                    {item.image_url
-                      ? <div className="shop-card-img" style={{ backgroundImage: `url(${item.image_url})` }} />
-                      : <div className="shop-card-img shop-card-img-empty">🍽️</div>}
-                    <div className="shop-card-body">
-                      <h3>{item.name}</h3>
-                      <p>{item.description}</p>
-                      <div className="shop-card-footer">
-                        <span className="shop-price">{fmt(item.price)} {tr('sum')}</span>
-                        {cartItem ? (
-                          <div className="shop-qty" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => decQty(item.id)}><Minus size={14} /></button>
-                            <span>{cartItem.qty}</span>
-                            <button onClick={() => incQty(item.id)}><Plus size={14} /></button>
-                          </div>
-                        ) : (
-                          <button className="shop-add" onClick={(e) => { e.stopPropagation(); addToCart(item) }}>
-                            <Plus size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+              {filtered.map(renderItemCard)}
             </div>
           )}
 
@@ -668,15 +783,24 @@ export default function ShopPage() {
             <div className="shop-orders">
               {orders.map(o => {
                 const st = statusColor(o.status)
+                const isActive = ACTIVE_STATUSES.includes(o.status)
                 return (
-                  <div key={o.id} className="shop-order">
+                  <div key={o.id} className={`shop-order ${isActive ? 'shop-order-active' : ''}`}>
                     <div className="shop-order-head">
                       <div>
                         <div className="shop-order-code">#{o.order_code}</div>
                         <div className="shop-order-date">{fmtDate(o.created_at)}</div>
                       </div>
-                      <span className="shop-status" style={{ background: st.bg, color: st.color }}>{tr(statusKey(o.status))}</span>
+                      <span className="shop-status" style={{ background: st.bg, color: st.color }}>
+                        {tr(statusKey(o.status))}
+                      </span>
                     </div>
+
+                    {/* Progress bar for active or recent orders, hidden for rejected */}
+                    {o.status !== 'rejected' && (
+                      <OrderProgress status={o.status} tr={tr} />
+                    )}
+
                     <ul className="shop-order-items">
                       {(o.items || []).map((it, i) => (
                         <li key={i}>
@@ -708,51 +832,72 @@ export default function ShopPage() {
             </div>
           </header>
           <div className="shop-profile">
+            {/* Avatar + name */}
             <div className="shop-section">
               <div className="shop-profile-card">
                 <div className="shop-profile-avatar">
                   {customer.first_name[0]?.toUpperCase()}
                 </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 17 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: '#111827' }}>
                     {customer.first_name} {customer.last_name}
                   </div>
-                  <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ fontSize: 13, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
                     <Phone size={12} /> {customer.phone}
                   </div>
                 </div>
               </div>
             </div>
 
+            {/* Stats */}
+            <div className="shop-stats">
+              <div className="shop-stat">
+                <div className="shop-stat-icon" style={{ background: '#FFE4D6', color: '#FF6B35' }}>
+                  <ShoppingBag size={18} />
+                </div>
+                <div className="shop-stat-value">{orders.length}</div>
+                <div className="shop-stat-label">{tr('totalOrders')}</div>
+              </div>
+              <div className="shop-stat">
+                <div className="shop-stat-icon" style={{ background: '#D1FAE5', color: '#10B981' }}>
+                  <Sparkles size={18} />
+                </div>
+                <div className="shop-stat-value">{fmt(totalSpent)}</div>
+                <div className="shop-stat-label">{tr('totalSpent')} {tr('sum')}</div>
+              </div>
+              <div className="shop-stat">
+                <div className="shop-stat-icon" style={{ background: '#E0F2FE', color: '#0EA5E9' }}>
+                  <UserCircle size={18} />
+                </div>
+                <div className="shop-stat-value">{fmtJoin(customer.created_at)}</div>
+                <div className="shop-stat-label">{tr('joinedOn')}</div>
+              </div>
+            </div>
+
+            {/* Language */}
             <div className="shop-section">
-              <h3>🌐 {tr('language')}</h3>
+              <h3><Globe2 size={16} /> {tr('language')}</h3>
               <div style={{ display: 'flex', gap: 8 }}>
                 {LANGS.map(l => (
                   <button
                     key={l.code}
                     type="button"
                     onClick={() => changeLang(l.code)}
-                    style={{
-                      flex: 1, padding: '10px 8px', borderRadius: 10,
-                      border: lang === l.code ? '1.5px solid #FF6B35' : '1.5px solid #E5E7EB',
-                      background: lang === l.code ? '#FFF4EF' : 'white',
-                      color: lang === l.code ? '#FF6B35' : '#6B7280',
-                      cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
-                      fontSize: 13, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', gap: 6,
-                    }}
+                    className={`shop-lang-card ${lang === l.code ? 'active' : ''}`}
                   >
-                    <span style={{ fontSize: 16 }}>{l.flag}</span> {l.label}
+                    <span style={{ fontSize: 22 }}>{l.flag}</span>
+                    <span>{l.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
+            {/* Addresses */}
             <div className="shop-section">
               <h3><MapPin size={16} /> {tr('myAddresses')}</h3>
               {addresses.length === 0 ? (
-                <p style={{ fontSize: 13, color: '#9CA3AF' }}>
-                  Manzil yo'q. Buyurtma berishda qo'shasiz.
+                <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+                  {tr('noAddrsProfile')}
                 </p>
               ) : (
                 <div className="shop-addresses">
@@ -774,6 +919,24 @@ export default function ShopPage() {
               )}
             </div>
 
+            {/* Settings/info list */}
+            <div className="shop-section shop-section-list">
+              <button className="shop-list-row" onClick={() => window.open('tel:+998901234567')}>
+                <div className="shop-list-icon" style={{ background: '#FEF3C7', color: '#F59E0B' }}>
+                  <Phone size={16} />
+                </div>
+                <div className="shop-list-text">{tr('helpSupport')}</div>
+                <ChevronRight size={16} color="#9CA3AF" />
+              </button>
+              <button className="shop-list-row" onClick={() => toast(`${tr('appName')} v1.0`)}>
+                <div className="shop-list-icon" style={{ background: '#E0F2FE', color: '#0EA5E9' }}>
+                  <Info size={16} />
+                </div>
+                <div className="shop-list-text">{tr('aboutApp')}</div>
+                <ChevronRight size={16} color="#9CA3AF" />
+              </button>
+            </div>
+
             <button className="shop-btn-logout" onClick={logout}>
               <LogOut size={16} /> {tr('logout')}
             </button>
@@ -790,13 +953,40 @@ export default function ShopPage() {
         <button className={`shop-nav-item ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
           <ClipboardList size={22} />
           <span>{tr('tabOrders')}</span>
-          {orders.some(o => o.status === 'pending' || o.status === 'cooking') && <span className="shop-nav-dot" />}
+          {orders.some(o => ACTIVE_STATUSES.includes(o.status)) && <span className="shop-nav-dot" />}
         </button>
         <button className={`shop-nav-item ${tab === 'profile' ? 'active' : ''}`} onClick={() => setTab('profile')}>
           <UserCircle size={22} />
           <span>{tr('tabProfile')}</span>
         </button>
       </nav>
+    </div>
+  )
+}
+
+// ───────── ORDER PROGRESS STEPPER ─────────
+function OrderProgress({ status, tr, compact }) {
+  const currentIdx = STATUS_INDEX[status] ?? 0
+  return (
+    <div className={`shop-progress ${compact ? 'shop-progress-compact' : ''}`}>
+      {STATUS_STEPS.map((step, i) => {
+        const Icon = STEP_ICONS[i]
+        const done = i <= currentIdx
+        const isCurrent = i === currentIdx
+        return (
+          <React.Fragment key={step}>
+            <div className={`shop-progress-step ${done ? 'done' : ''} ${isCurrent ? 'current' : ''}`}>
+              <div className="shop-progress-dot">
+                <Icon size={compact ? 13 : 16} />
+              </div>
+              {!compact && <div className="shop-progress-label">{tr(STEP_KEYS[i])}</div>}
+            </div>
+            {i < STATUS_STEPS.length - 1 && (
+              <div className={`shop-progress-bar ${i < currentIdx ? 'done' : ''}`} />
+            )}
+          </React.Fragment>
+        )
+      })}
     </div>
   )
 }
