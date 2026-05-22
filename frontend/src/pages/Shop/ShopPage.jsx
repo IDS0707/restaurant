@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { menuAPI, ordersAPI, customerAPI } from '../../api'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { menuAPI, ordersAPI, customerAPI, promoAPI } from '../../api'
 import toast from 'react-hot-toast'
 import {
   ShoppingCart, Plus, Minus, Trash2, X, Search,
@@ -86,6 +86,9 @@ export default function ShopPage() {
   const [addrLabel, setAddrLabel] = useState('Uy')
   const [note, setNote] = useState('')
   const [promoInput, setPromoInput] = useState('')
+  const [promoCheck, setPromoCheck] = useState(null) // {valid, discount_value, final_price, label, error?}
+  const [promoChecking, setPromoChecking] = useState(false)
+  const promoDebounceRef = useRef(null)
   const [submitting, setSubmitting] = useState(false)
   const [orderCode, setOrderCode] = useState('')
   const [imgErrors, setImgErrors] = useState({})
@@ -127,12 +130,12 @@ export default function ShopPage() {
     }
   }, [customer])
 
-  // Auto-refresh orders every 30s while there's an active order (visible status updates)
+  // Auto-refresh orders every 5s while there's an active order (real-time status)
   useEffect(() => {
     if (!customer) return
     const hasActive = orders.some(o => ACTIVE_STATUSES.includes(o.status))
     if (!hasActive) return
-    const id = setInterval(loadOrders, 30000)
+    const id = setInterval(loadOrders, 5000)
     return () => clearInterval(id)
   }, [customer, orders])
 
@@ -153,6 +156,33 @@ export default function ShopPage() {
       if (def) setSelectedAddrId(def.id)
     } catch {}
   }
+
+  // Debounced promo check: trigger 500ms after user stops typing
+  useEffect(() => {
+    if (promoDebounceRef.current) clearTimeout(promoDebounceRef.current)
+    const code = promoInput.trim()
+    if (!code) {
+      setPromoCheck(null)
+      setPromoChecking(false)
+      return
+    }
+    setPromoChecking(true)
+    promoDebounceRef.current = setTimeout(async () => {
+      try {
+        const r = await promoAPI.check(code, cartTotalNow())
+        setPromoCheck({ ...r.data, error: null })
+      } catch (e) {
+        setPromoCheck({ valid: false, error: e?.response?.data?.error || 'Xato' })
+      } finally {
+        setPromoChecking(false)
+      }
+    }, 500)
+    return () => promoDebounceRef.current && clearTimeout(promoDebounceRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoInput, cart])
+
+  // Snapshot of current cart total (for promo check that doesn't capture stale closures)
+  const cartTotalNow = () => cart.reduce((s, c) => s + c.price * c.qty, 0)
 
   const maybeAskLocation = () => {
     if (!navigator.geolocation) return
@@ -298,6 +328,7 @@ export default function ShopPage() {
       setCart([])
       setNote('')
       setPromoInput('')
+      setPromoCheck(null)
       setView('success')
       loadOrders()
     } catch (e) {
@@ -577,14 +608,45 @@ export default function ShopPage() {
           {/* Promo code */}
           <div className="shop-section">
             <h3>🎟️ {tr('promoCode')}</h3>
-            <input
-              className="shop-input"
-              placeholder={tr('promoCode')}
-              value={promoInput}
-              onChange={e => setPromoInput(e.target.value.toUpperCase())}
-              style={{ fontFamily: 'monospace', letterSpacing: 1, fontWeight: 600, marginBottom: 0 }}
-            />
+            <div className="shop-promo-row">
+              <input
+                className="shop-input"
+                placeholder={tr('promoCode')}
+                value={promoInput}
+                onChange={e => setPromoInput(e.target.value.toUpperCase())}
+                style={{ fontFamily: 'monospace', letterSpacing: 1, fontWeight: 600, marginBottom: 0 }}
+              />
+              {promoChecking && <Loader size={18} className="spin" style={{ color: '#FF6B35', marginLeft: 8 }} />}
+            </div>
+            {promoCheck && promoCheck.valid && (
+              <div className="shop-promo-ok">
+                <Check size={14} />
+                <span>{tr('promoApplied')} — </span>
+                <strong>−{fmt(promoCheck.discount_value)} {tr('sum')}</strong>
+              </div>
+            )}
+            {promoCheck && !promoCheck.valid && promoCheck.error && (
+              <div className="shop-promo-err">{promoCheck.error}</div>
+            )}
           </div>
+
+          {/* Final price summary (shown when a promo is applied) */}
+          {promoCheck && promoCheck.valid && promoCheck.discount_value > 0 && (
+            <div className="shop-section shop-price-summary">
+              <div className="shop-summary-row">
+                <span>{tr('total')}</span>
+                <span style={{ textDecoration: 'line-through', color: '#9CA3AF' }}>{fmt(cartTotal)} {tr('sum')}</span>
+              </div>
+              <div className="shop-summary-row" style={{ color: '#10B981' }}>
+                <span>🎟️ {promoCheck.label || tr('promoApplied')}</span>
+                <span style={{ fontWeight: 700 }}>−{fmt(promoCheck.discount_value)} {tr('sum')}</span>
+              </div>
+              <div className="shop-summary-total">
+                <span>✓</span>
+                <span>{fmt(promoCheck.final_price)} {tr('sum')}</span>
+              </div>
+            </div>
+          )}
 
           {/* Note */}
           <div className="shop-section">
@@ -604,7 +666,7 @@ export default function ShopPage() {
           >
             {submitting
               ? <><Loader size={18} className="spin" /> {tr('sending')}</>
-              : <><Check size={18} /> {tr('placeOrder')} — {fmt(cartTotal)} {tr('sum')}</>}
+              : <><Check size={18} /> {tr('placeOrder')} — {fmt(promoCheck && promoCheck.valid ? promoCheck.final_price : cartTotal)} {tr('sum')}</>}
           </button>
         </div>
       </div>

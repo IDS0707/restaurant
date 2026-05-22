@@ -93,6 +93,7 @@ export const promoAPI = {
   create: (data) => api.post('/admin/promo', data),
   update: (id, data) => api.put(`/admin/promo/${id}`, data),
   delete: (id) => api.delete(`/admin/promo/${id}`),
+  check: (code, order_total) => api.post('/promo/check', { code, order_total }),
 }
 
 export const customerAPI = {

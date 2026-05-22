@@ -44,6 +44,9 @@ func main() {
 		// Customer auth (no SMS — phone-based registration)
 		api.POST("/customer/register", handlers.CustomerRegisterOrLogin)
 		api.POST("/customer/login", handlers.CustomerLogin)
+
+		// Public promo preview — used by the shop to show discount before checkout
+		api.POST("/promo/check", handlers.CheckPromoCode)
 	}
 
 	// Customer-authenticated routes

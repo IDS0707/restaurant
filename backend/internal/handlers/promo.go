@@ -194,3 +194,98 @@ func DeletePromoDiscount(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted"})
 }
+
+// CheckPromoCode — public preview endpoint for the customer app.
+// Given a code and an order total, returns the discount amount without
+// touching use_count. Also accepts VIP card codes (100% off).
+func CheckPromoCode(c *gin.Context) {
+	var body struct {
+		Code       string  `json:"code" binding:"required"`
+		OrderTotal float64 `json:"order_total"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	code := strings.TrimSpace(body.Code)
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kod bo'sh"})
+		return
+	}
+
+	// Try VIP card first (free order)
+	var vipFirst, vipLast string
+	var vipActive bool
+	vipErr := database.DB.QueryRow(
+		`SELECT first_name, COALESCE(last_name,''), is_active
+		 FROM vip_cards WHERE UPPER(code)=UPPER($1)`, code,
+	).Scan(&vipFirst, &vipLast, &vipActive)
+	if vipErr == nil {
+		if !vipActive {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "VIP karta deaktivlashtirilgan"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"valid":          true,
+			"card_type":      "vip",
+			"discount_type":  "amount",
+			"discount_value": body.OrderTotal,
+			"final_price":    0.0,
+			"label":          "VIP",
+		})
+		return
+	}
+
+	// Promo
+	var promoAmount float64
+	var promoType string
+	var promoActive bool
+	var promoLimit, promoUseCount int
+	var promoValidUntil *time.Time
+	err := database.DB.QueryRow(
+		`SELECT discount_amount, COALESCE(discount_type,'amount'), is_active,
+		        COALESCE(usage_limit,0), COALESCE(use_count,0), valid_until
+		 FROM promo_discount WHERE UPPER(code)=UPPER($1)`,
+		code,
+	).Scan(&promoAmount, &promoType, &promoActive, &promoLimit, &promoUseCount, &promoValidUntil)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Promokod topilmadi"})
+		return
+	}
+	if !promoActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Promo deaktivlashtirilgan"})
+		return
+	}
+	if promoValidUntil != nil && time.Now().After(*promoValidUntil) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Promo muddati tugagan"})
+		return
+	}
+	if promoLimit > 0 && promoUseCount >= promoLimit {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Promo limiti tugagan"})
+		return
+	}
+
+	var discountValue float64
+	if promoType == "percent" {
+		discountValue = body.OrderTotal * promoAmount / 100.0
+	} else {
+		discountValue = promoAmount
+	}
+	if discountValue > body.OrderTotal && body.OrderTotal > 0 {
+		discountValue = body.OrderTotal
+	}
+	finalPrice := body.OrderTotal - discountValue
+	if finalPrice < 0 {
+		finalPrice = 0
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"valid":           true,
+		"card_type":       "promo",
+		"discount_type":   promoType,
+		"discount_amount": promoAmount,
+		"discount_value":  discountValue,
+		"final_price":     finalPrice,
+		"label":           "Promo",
+	})
+}
